@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test User Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056CC;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test User Login</h1>
+        <p style="text-align: center; color: #666;">
+            This page helps test the login functionality for the test account.
+        </p>
+        
+        <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="email" id="email" value="test@test.com" readonly>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password:</label>
+            <input type="password" id="password" value="test123">
+        </div>
+        
+        <button onclick="testLogin()">Test Login</button>
+        
+        <div id="status"></div>
+        
+        <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 4px;">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>If the login fails, the password for <code>test@test.com</code> is not set to <code>test123</code></li>
+                <li>Go to <a href="https://console.firebase.google.com/" target="_blank">Firebase Console</a></li>
+                <li>Select project: <code>foodbooking-3ccec</code></li>
+                <li>Navigate to <strong>Authentication > Users</strong></li>
+                <li>Find the user <code>test@test.com</code></li>
+                <li>Click the three dots menu and select <strong>Edit</strong></li>
+                <li>Set the password to <code>test123</code></li>
+                <li>Save the changes</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDeJS7QqvPpKsAAKSOeUFP_0poNGGrWswg",
+            authDomain: "foodbooking-3ccec.firebaseapp.com",
+            projectId: "foodbooking-3ccec",
+            storageBucket: "foodbooking-3ccec.firebasestorage.app",
+            messagingSenderId: "1079191792865",
+            appId: "1:1079191792865:web:8ab4fd90d3121e764c1ba0",
+            measurementId: "G-N9NKY9YQ38"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        window.testLogin = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const statusDiv = document.getElementById('status');
+
+            try {
+                statusDiv.innerHTML = '<div class="info">Attempting to login...</div>';
+                
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                
+                statusDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Login successful!<br>
+                        User ID: ${user.uid}<br>
+                        Email: ${user.email}
+                    </div>
+                `;
+            } catch (error) {
+                let errorMessage = 'Login failed: ' + error.message;
+                
+                if (error.code === 'auth/user-not-found') {
+                    errorMessage = 'User not found. Please create the test account first.';
+                } else if (error.code === 'auth/wrong-password') {
+                    errorMessage = 'Wrong password. Please set the password to "test123" in Firebase Console.';
+                } else if (error.code === 'auth/invalid-credential') {
+                    errorMessage = 'Invalid credentials. Please check the email and password.';
+                }
+                
+                statusDiv.innerHTML = `<div class="error">❌ ${errorMessage}</div>`;
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "@foodsupplier/shared",
+  "version": "1.0.0",
+  "description": "Shared code between web and mobile apps",
+  "main": "index.ts",
+  "types": "index.ts"
+} 

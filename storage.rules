@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to upload and read product images
+    match /product_images/{imageId} {
+      // Allow authenticated users to upload images
+      allow write: if request.auth != null;
+      // Allow anyone to read product images (for displaying in web/mobile)
+      allow read: if true;
+    }
+    
+    // Allow authenticated users to upload and read user profile images
+    match /user_avatars/{userId} {
+      // Users can only upload/update their own avatar
+      allow write: if request.auth != null && request.auth.uid == userId;
+      // Anyone can read user avatars
+      allow read: if true;
+    }
+    
+    // Default rule - deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
