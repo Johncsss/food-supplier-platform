@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Search, Plus, Eye, Edit, X, Package, DollarSign, Trash2, Tag, Settings } from 'lucide-react';
+import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { Product, Category } from '@/shared/types';
 import { categories as defaultCategories } from '@/shared/products';
 import ImageUploader from '@/components/ui/ImageUploader';
@@ -135,7 +136,7 @@ export default function AdminProducts() {
       try {
         setLoading(true);
         
-        // Fetch products
+        // Fetch products - get all products first to ensure none are missed
         const productsRef = collection(db, 'products');
         const productsSnapshot = await getDocs(productsRef);
         const fetchedProducts: Product[] = productsSnapshot.docs.map((doc) => {
@@ -143,6 +144,7 @@ export default function AdminProducts() {
           return {
             id: doc.id,
             name: data.name || '',
+            productCode: data.productCode || '',
             description: data.description || '',
             category: data.category || '',
             subcategory: data.subcategory || '',
@@ -151,12 +153,23 @@ export default function AdminProducts() {
             minOrderQuantity: data.minOrderQuantity || 1,
             stockQuantity: data.stockQuantity || 0,
             imageUrl: data.imageUrl || '',
+            imageUrls: data.imageUrls || [],
             isAvailable: data.isAvailable ?? true,
             supplier: data.supplier || '',
             createdAt: data.createdAt?.toDate?.() || new Date(),
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
           };
         });
+        
+        // Sort products by createdAt (newest first), with products without createdAt at the end
+        fetchedProducts.sort((a, b) => {
+          const aTime = a.createdAt.getTime();
+          const bTime = b.createdAt.getTime();
+          return bTime - aTime;
+        });
+        
+        console.log('Fetched products:', fetchedProducts.length, 'products');
+        console.log('Product names:', fetchedProducts.map(p => p.name));
         setProducts(fetchedProducts);
 
         // Fetch categories
@@ -530,13 +543,13 @@ export default function AdminProducts() {
               <Tag className="w-4 h-4 mr-2" />
               管理類別
             </button>
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="btn-primary"
+            <Link 
+              href="/admin/products/add"
+              className="btn-primary inline-flex items-center"
             >
               <Plus className="w-4 h-4 mr-2" />
               新增產品
-            </button>
+            </Link>
           </div>
         </div>
       </div>
