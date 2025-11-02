@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, Eye, Edit, X, Package, DollarSign, Trash2, Tag, Settings } from 'lucide-react';
+import { Search, Plus, Eye, Edit, X, Trash2, Tag, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
@@ -65,7 +65,8 @@ export default function AdminProducts() {
     name: '',
     description: '',
     imageUrl: '',
-    subcategories: ''
+    subcategories: '',
+    minimumSpending: ''
   });
   const [newSubcategory, setNewSubcategory] = useState('');
 
@@ -104,6 +105,44 @@ export default function AdminProducts() {
   const getSubcategoriesForCategory = (categoryName: string): string[] => {
     const category = categories.find(cat => cat.name === categoryName);
     return category ? category.subcategories : [];
+  };
+
+  // Function to get the next available product code starting from #10001
+  const getNextAvailableProductCode = async (): Promise<string> => {
+    try {
+      const productsRef = collection(db, 'products');
+      const productsSnapshot = await getDocs(productsRef);
+      
+      // Extract all product codes and find the highest number
+      const existingCodes: number[] = [];
+      
+      productsSnapshot.docs.forEach((doc) => {
+        const productCode = doc.data().productCode || '';
+        if (productCode) {
+          // Extract number from product code (handles formats like "#10001", "10001", "#10002", etc.)
+          const match = productCode.match(/#?(\d+)/);
+          if (match) {
+            const number = parseInt(match[1], 10);
+            if (number >= 10001) {
+              existingCodes.push(number);
+            }
+          }
+        }
+      });
+
+      // Find the next available code starting from 10001
+      let nextNumber = 10001;
+      if (existingCodes.length > 0) {
+        const maxNumber = Math.max(...existingCodes);
+        nextNumber = maxNumber + 1;
+      }
+
+      return `#${nextNumber}`;
+    } catch (error) {
+      console.error('Error finding next product code:', error);
+      // Fallback to #10001 if there's an error
+      return '#10001';
+    }
   };
 
   // Fetch suppliers from Firestore
@@ -183,6 +222,7 @@ export default function AdminProducts() {
             description: data.description || '',
             imageUrl: data.imageUrl || '',
             subcategories: data.subcategories || [],
+            minimumSpending: data.minimumSpending || undefined,
           };
         });
         
@@ -206,6 +246,25 @@ export default function AdminProducts() {
 
     fetchData();
   }, []);
+
+  // Auto-fill product code when add modal opens
+  useEffect(() => {
+    const autoFillProductCode = async () => {
+      if (showAddModal) {
+        const nextCode = await getNextAvailableProductCode();
+        setAddForm(prev => {
+          // Only auto-fill if productCode is empty
+          if (!prev.productCode) {
+            return { ...prev, productCode: nextCode };
+          }
+          return prev;
+        });
+      }
+    };
+
+    autoFillProductCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddModal]);
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -406,6 +465,7 @@ export default function AdminProducts() {
         description: categoryForm.description,
         imageUrl: categoryForm.imageUrl,
         subcategories: subcategoriesArray,
+        minimumSpending: categoryForm.minimumSpending ? parseFloat(categoryForm.minimumSpending) : undefined,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -418,6 +478,7 @@ export default function AdminProducts() {
         description: categoryForm.description,
         imageUrl: categoryForm.imageUrl,
         subcategories: subcategoriesArray,
+        minimumSpending: categoryForm.minimumSpending ? parseFloat(categoryForm.minimumSpending) : undefined,
       };
 
       setCategories([...categories, categoryForDisplay]);
@@ -428,7 +489,8 @@ export default function AdminProducts() {
         name: '',
         description: '',
         imageUrl: '',
-        subcategories: ''
+        subcategories: '',
+        minimumSpending: ''
       });
       setNewSubcategory('');
     } catch (error: any) {
@@ -445,7 +507,8 @@ export default function AdminProducts() {
       name: category.name,
       description: category.description,
       imageUrl: category.imageUrl,
-      subcategories: category.subcategories.join(', ')
+      subcategories: category.subcategories.join(', '),
+      minimumSpending: category.minimumSpending?.toString() || ''
     });
     setNewSubcategory('');
     setShowEditCategoryModal(true);
@@ -472,17 +535,19 @@ export default function AdminProducts() {
         description: categoryForm.description,
         imageUrl: categoryForm.imageUrl,
         subcategories: subcategoriesArray,
+        minimumSpending: categoryForm.minimumSpending ? parseFloat(categoryForm.minimumSpending) : undefined,
         updatedAt: serverTimestamp()
       });
 
       const updatedCategories = categories.map(category =>
         category.id === selectedCategory.id
-          ? {
+              ? {
               ...category,
               name: categoryForm.name,
               description: categoryForm.description,
               imageUrl: categoryForm.imageUrl,
               subcategories: subcategoriesArray,
+              minimumSpending: categoryForm.minimumSpending ? parseFloat(categoryForm.minimumSpending) : undefined,
             }
           : category
       );
@@ -509,11 +574,6 @@ export default function AdminProducts() {
     }
   };
 
-  const mockProductStats = {
-    totalOrders: 156,
-    totalRevenue: 2847.50,
-    lastOrderDate: '2024-01-15'
-  };
 
   if (loading) {
     return (
@@ -779,41 +839,6 @@ export default function AdminProducts() {
                       }`}>
                         {selectedProduct.isAvailable ? '可購買' : '不可購買'}
                       </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Product Statistics */}
-                <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">產品統計</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <div className="flex items-center">
-                        <Package className="w-5 h-5 text-blue-600 mr-2" />
-                        <div>
-                          <p className="text-sm text-blue-600">總訂單</p>
-                          <p className="text-xl font-bold text-blue-900">{mockProductStats.totalOrders}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <div className="flex items-center">
-                        <DollarSign className="w-5 h-5 text-green-600 mr-2" />
-                        <div>
-                          <p className="text-sm text-green-600">總收入</p>
-                          <p className="text-xl font-bold text-green-900">${mockProductStats.totalRevenue.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                      <div className="flex items-center">
-                        <Package className="w-5 h-5 text-purple-600 mr-2" />
-                        <div>
-                          <p className="text-sm text-purple-600">最後訂單</p>
-                          <p className="text-xl font-bold text-purple-900">{mockProductStats.lastOrderDate}</p>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1367,6 +1392,23 @@ export default function AdminProducts() {
                     onError={(error) => setError(error)}
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">最低消費</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={categoryForm.minimumSpending}
+                      onChange={(e) => setCategoryForm({...categoryForm, minimumSpending: e.target.value})}
+                      className="w-full pl-8 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">客戶只能將相同類別和供應商的商品加入購物車</p>
+                </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">子類別</label>
@@ -1491,6 +1533,23 @@ export default function AdminProducts() {
                     onChange={(url) => setCategoryForm({...categoryForm, imageUrl: url})}
                     onError={(error) => setError(error)}
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">最低消費</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={categoryForm.minimumSpending}
+                      onChange={(e) => setCategoryForm({...categoryForm, minimumSpending: e.target.value})}
+                      className="w-full pl-8 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">客戶只能將相同類別和供應商的商品加入購物車</p>
                 </div>
                 
                 <div>

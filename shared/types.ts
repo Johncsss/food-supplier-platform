@@ -32,6 +32,7 @@ export interface Product {
   price: number;
   unit: string;
   minOrderQuantity: number;
+  maxOrderQuantity?: number; // 最多訂貨量
   stockQuantity: number;
   imageUrl: string;
   imageUrls?: string[]; // Multiple images array
@@ -83,6 +84,7 @@ export interface Category {
   description: string;
   imageUrl: string;
   subcategories: string[];
+  minimumSpending?: number; // 最低消費
 }
 
 export interface CartItem {

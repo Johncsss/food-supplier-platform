@@ -143,11 +143,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [state.items]);
 
   const addToCart = (item: Omit<CartItem, 'totalPrice'>) => {
-    // Check if there are items in the cart with a different supplier
+    // Check if there are items in the cart
     if (state.items.length > 0) {
-      const existingSupplier = state.items[0].supplier;
+      const existingItem = state.items[0];
+      const existingSupplier = existingItem.supplier;
+      const existingCategory = existingItem.category;
+      
+      // Check if supplier matches
       if (item.supplier !== existingSupplier) {
-        toast.error(`It's only allowed to add the same supplier products into the shopping cart. Please clear the items in the shopping cart before adding different supplier products into the shopping cart.`, {
+        toast.error('只能將相同供應商的商品加入購物車。請先清空購物車再添加不同供應商的商品。', {
+          duration: 5000,
+        });
+        return;
+      }
+      
+      // Check if category matches
+      if (item.category !== existingCategory) {
+        toast.error('只能將相同類別的商品加入購物車。請先清空購物車再添加不同類別的商品。', {
           duration: 5000,
         });
         return;

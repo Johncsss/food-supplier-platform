@@ -15,7 +15,8 @@ import {
   Clock,
   X,
   Calendar,
-  Package
+  Package,
+  Trash2
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
@@ -43,9 +44,12 @@ export default function AdminSuppliers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierProducts, setSupplierProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productCountToDelete, setProductCountToDelete] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
     companyName: '',
@@ -230,6 +234,57 @@ export default function AdminSuppliers() {
       setSupplierProducts([]);
     } finally {
       setLoadingProducts(false);
+    }
+  };
+
+  const handleDeleteSupplier = async (supplier: Supplier) => {
+    // First, fetch product count
+    try {
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('supplier', '==', supplier.id));
+      const snapshot = await getDocs(q);
+      setProductCountToDelete(snapshot.docs.length);
+      setSelectedSupplier(supplier);
+      setShowDeleteModal(true);
+    } catch (error) {
+      console.error('Error fetching product count:', error);
+      setProductCountToDelete(0);
+      setSelectedSupplier(supplier);
+      setShowDeleteModal(true);
+    }
+  };
+
+  const confirmDeleteSupplier = async () => {
+    if (!selectedSupplier) return;
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+
+      const response = await fetch('/api/delete-supplier', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ supplierId: selectedSupplier.id }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || '刪除供應商失敗');
+      }
+
+      // Remove from local state
+      setSuppliers(suppliers.filter(supplier => supplier.id !== selectedSupplier.id));
+      setShowDeleteModal(false);
+      setSelectedSupplier(null);
+      alert(`供應商已成功刪除！已同時刪除 ${result.deletedProducts || productCountToDelete} 個產品。`);
+    } catch (error: any) {
+      console.error('Error deleting supplier:', error);
+      setError(error.message || '刪除供應商失敗');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -525,6 +580,13 @@ export default function AdminSuppliers() {
                         title="編輯供應商"
                       >
                         <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteSupplier(supplier)}
+                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                        title="刪除供應商"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -1035,6 +1097,84 @@ export default function AdminSuppliers() {
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
                 >
                   關閉
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Supplier Confirmation Modal */}
+      {showDeleteModal && selectedSupplier && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">確認刪除供應商</h3>
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedSupplier(null);
+                    setError(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                  disabled={isDeleting}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {error && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+
+              <div className="mb-6">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="p-3 rounded-full bg-red-100">
+                    <Trash2 className="w-8 h-8 text-red-600" />
+                  </div>
+                </div>
+                <p className="text-sm text-gray-700 mb-4 text-center">
+                  確定要刪除供應商 <strong>{selectedSupplier.companyName}</strong> 嗎？
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-red-800 font-medium mb-2">⚠️ 警告</p>
+                  <p className="text-sm text-red-700">
+                    此操作將同時刪除此供應商的所有產品（<strong>{productCountToDelete} 個產品</strong>），且無法復原。
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedSupplier(null);
+                    setError(null);
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={confirmDeleteSupplier}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>刪除中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>確認刪除</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

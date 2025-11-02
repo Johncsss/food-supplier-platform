@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { db } from '@/lib/firebase';
@@ -24,15 +24,13 @@ interface ProductFormData {
   category: string;
   subcategory: string;
   price: number;
+  unit: string;
+  minOrderQuantity: number;
+  maxOrderQuantity: number;
   stockQuantity: number;
   supplier: string;
   description: string;
   imageUrls: string[];
-  inventory: {
-    minStock: number;
-    maxStock: number;
-    unit: string;
-  };
 }
 
 export default function AddProduct() {
@@ -51,6 +49,9 @@ export default function AddProduct() {
     defaultValues: {
       productCode: '',
       imageUrls: [],
+      stockQuantity: 0,
+      minOrderQuantity: 1,
+      maxOrderQuantity: 0,
     }
   });
 
@@ -128,15 +129,22 @@ export default function AddProduct() {
     setIsLoading(true);
 
     try {
-      // Validate inventory settings
-      if (data.inventory.minStock >= data.inventory.maxStock) {
-        toast.error('最低庫存必須小於最高庫存');
-        setIsLoading(false);
-        return;
+      // Validate order quantities
+      if (data.maxOrderQuantity > 0) {
+        if (data.maxOrderQuantity > 100) {
+          toast.error('最多訂貨量不能超過100');
+          setIsLoading(false);
+          return;
+        }
+        if (data.maxOrderQuantity < data.minOrderQuantity) {
+          toast.error('最多訂貨量必須大於或等於最低訂貨量');
+          setIsLoading(false);
+          return;
+        }
       }
 
-      if (data.stockQuantity > data.inventory.maxStock) {
-        toast.error('初始庫存數量不能超過最高庫存');
+      if (data.minOrderQuantity <= 0) {
+        toast.error('最低訂貨量必須大於0');
         setIsLoading(false);
         return;
       }
@@ -148,10 +156,11 @@ export default function AddProduct() {
         description: data.description,
         category: data.category,
         subcategory: data.subcategory,
-        price: data.price,
-        unit: data.inventory.unit,
-        minOrderQuantity: 1,
-        stockQuantity: data.stockQuantity,
+        price: Number(data.price),
+        unit: data.unit,
+        minOrderQuantity: Number(data.minOrderQuantity),
+        maxOrderQuantity: data.maxOrderQuantity > 0 ? Number(data.maxOrderQuantity) : undefined,
+        stockQuantity: Number(data.stockQuantity),
         imageUrl: data.imageUrls && data.imageUrls.length > 0 ? data.imageUrls[0] : '', // Keep first image for backward compatibility
         imageUrls: data.imageUrls || [], // Store all images
         isAvailable: true,
@@ -267,7 +276,7 @@ export default function AddProduct() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   價格
@@ -279,7 +288,8 @@ export default function AddProduct() {
                     step="0.01"
                     {...register('price', {
                       required: '價格為必填項目',
-                      min: { value: 0, message: '價格必須為正數' }
+                      min: { value: 0, message: '價格不能為負數' },
+                      valueAsNumber: true
                     })}
                     className="input-field pl-8"
                     placeholder="0.00"
@@ -292,13 +302,37 @@ export default function AddProduct() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  計量單位
+                </label>
+                <select
+                  {...register('unit', { required: '計量單位為必填項目' })}
+                  className="input-field"
+                >
+                  <option value="">選擇單位</option>
+                  <option value="斤">斤</option>
+                  <option value="公斤">公斤</option>
+                  <option value="磅">磅</option>
+                  <option value="包">包</option>
+                  <option value="盒">盒</option>
+                  <option value="箱">箱</option>
+                  <option value="個">個</option>
+                </select>
+                {errors.unit && (
+                  <p className="text-red-500 text-sm mt-1">{errors.unit.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   庫存數量
                 </label>
                 <input
                   type="number"
+                  step="1"
                   {...register('stockQuantity', {
                     required: '庫存數量為必填項目',
-                    min: { value: 0, message: '庫存數量必須為正數' }
+                    min: { value: 0, message: '庫存數量不能為負數' },
+                    valueAsNumber: true
                   })}
                   className="input-field"
                   placeholder="0"
@@ -306,6 +340,50 @@ export default function AddProduct() {
                 {errors.stockQuantity && (
                   <p className="text-red-500 text-sm mt-1">{errors.stockQuantity.message}</p>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  最低訂貨量 *
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  {...register('minOrderQuantity', {
+                    required: '最低訂貨量為必填項目',
+                    min: { value: 1, message: '最低訂貨量必須大於0' },
+                    valueAsNumber: true
+                  })}
+                  className="input-field"
+                  placeholder="1"
+                />
+                {errors.minOrderQuantity && (
+                  <p className="text-red-500 text-sm mt-1">{errors.minOrderQuantity.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  最多訂貨量
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  max="100"
+                  {...register('maxOrderQuantity', {
+                    min: { value: 0, message: '最多訂貨量不能為負數' },
+                    max: { value: 100, message: '最多訂貨量不能超過100' },
+                    valueAsNumber: true
+                  })}
+                  className="input-field"
+                  placeholder="0 (無限制)"
+                />
+                {errors.maxOrderQuantity && (
+                  <p className="text-red-500 text-sm mt-1">{errors.maxOrderQuantity.message}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">最多100，留空或設為0表示無限制</p>
               </div>
             </div>
 
@@ -361,83 +439,6 @@ export default function AddProduct() {
                   type="hidden"
                 />
               </div>
-
-            {/* Inventory Section */}
-            <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">庫存設定</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    最低庫存
-                  </label>
-                  <input
-                    type="number"
-                    {...register('inventory.minStock', {
-                      required: '最低庫存為必填項目',
-                      min: { value: 0, message: '最低庫存必須為正數' }
-                    })}
-                    className="input-field"
-                    placeholder="0"
-                  />
-                  {errors.inventory?.minStock && (
-                    <p className="text-red-500 text-sm mt-1">{errors.inventory.minStock.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    最高庫存
-                  </label>
-                  <input
-                    type="number"
-                    {...register('inventory.maxStock', {
-                      required: '最高庫存為必填項目',
-                      min: { value: 1, message: '最高庫存至少為1' }
-                    })}
-                    className="input-field"
-                    placeholder="1000"
-                  />
-                  {errors.inventory?.maxStock && (
-                    <p className="text-red-500 text-sm mt-1">{errors.inventory.maxStock.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    計量單位
-                  </label>
-                  <select
-                    {...register('inventory.unit', { required: '計量單位為必填項目' })}
-                    className="input-field"
-                  >
-                    <option value="">選擇單位</option>
-                    <option value="斤">斤</option>
-                    <option value="公斤">公斤</option>
-                    <option value="磅">磅</option>
-                    <option value="包">包</option>
-                    <option value="盒">盒</option>
-                    <option value="箱">箱</option>
-                    <option value="個">個</option>
-                  </select>
-                  {errors.inventory?.unit && (
-                    <p className="text-red-500 text-sm mt-1">{errors.inventory.unit.message}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <div className="flex items-start">
-                  <Package className="w-5 h-5 text-blue-600 mt-0.5 mr-2" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-900">庫存管理</p>
-                    <p className="text-sm text-blue-700 mt-1">
-                      這些設定可幫助管理庫存水平，並在庫存過低或過高時觸發警報。
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <div className="flex justify-end space-x-4 pt-6">
               <Link href="/admin/products" className="btn-outline">
