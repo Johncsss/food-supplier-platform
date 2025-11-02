@@ -3,7 +3,7 @@ const nextConfig = {
   images: {
     domains: ['images.unsplash.com', 'firebasestorage.googleapis.com'],
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -20,6 +20,15 @@ const nextConfig = {
         os: false,
         path: false,
       };
+    }
+    
+    // Ignore serviceAccountKey.json only for client builds (server needs it)
+    if (!isServer) {
+      config.plugins.push(
+        new webpack.IgnorePlugin({
+          resourceRegExp: /serviceAccountKey\.json$/,
+        })
+      );
     }
     
     // Handle undici module parsing issue
