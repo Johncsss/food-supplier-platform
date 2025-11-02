@@ -4,6 +4,9 @@ import { doc, updateDoc, increment, getDoc, collection, query, where, getDocs, s
 import { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
 import { addPointsToUser } from '@/lib/points-utils';
 
+// Force dynamic rendering since we use request.url
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const { userId, pointsToPurchase, paymentAmount } = await request.json();

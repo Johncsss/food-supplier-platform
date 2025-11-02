@@ -3,6 +3,9 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc, increment, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
 
+// Force dynamic rendering since we use request.url
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const { userId, amount, description } = await request.json();
