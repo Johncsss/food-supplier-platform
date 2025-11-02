@@ -37,11 +37,18 @@ if (!admin.apps.length) {
 
     // If not initialized yet, try individual environment variables (for Vercel)
     if (!initialized) {
+      // Handle private key with various newline representations
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      if (privateKey) {
+        // Replace \\n (literal backslash + n) with actual newlines
+        privateKey = privateKey.replace(/\\n/g, '\n');
+      }
+
       const firebaseConfig = {
         type: 'service_account',
         project_id: process.env.FIREBASE_PROJECT_ID,
         private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-        private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: privateKey,
         client_email: process.env.FIREBASE_CLIENT_EMAIL,
         client_id: process.env.FIREBASE_CLIENT_ID,
         auth_uri: 'https://accounts.google.com/o/oauth2/auth',
@@ -51,11 +58,17 @@ if (!admin.apps.length) {
       };
 
       if (firebaseConfig.private_key && firebaseConfig.client_email && firebaseConfig.project_id) {
-        admin.initializeApp({
-          credential: admin.credential.cert(firebaseConfig as admin.ServiceAccount),
-          databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://foodbooking-3ccec-default-rtdb.asia-southeast1.firebasedatabase.app'
-        });
-        initialized = true;
+        try {
+          admin.initializeApp({
+            credential: admin.credential.cert(firebaseConfig as admin.ServiceAccount),
+            databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://foodbooking-3ccec-default-rtdb.asia-southeast1.firebasedatabase.app'
+          });
+          initialized = true;
+        } catch (initError: any) {
+          console.error('Failed to initialize Firebase Admin with environment variables:', initError.message);
+          // Log the first 50 chars of the key for debugging (safe to log)
+          console.error('Private key starts with:', privateKey?.substring(0, 50));
+        }
       }
     }
 

@@ -44,11 +44,26 @@ FIREBASE_PRIVATE_KEY_ID = "586d3fa86c28120d3837c857e5406184dfe6cada"
 2. Navigate to **Settings** → **Environment Variables**
 3. Add each variable above with its corresponding value
 4. Make sure to select **Production**, **Preview**, and **Development** environments
-5. For `FIREBASE_PRIVATE_KEY`, keep the `\n` characters (they will be converted to actual newlines)
+5. For `FIREBASE_PRIVATE_KEY`, use one of the options below:
+
+### Option 1: Copy from this file (RECOMMENDED)
+Copy the entire private key value from line 16 above, including all the `\n` characters. Vercel will automatically handle the newlines.
+
+### Option 2: Use the raw value from serviceAccountKey.json
+If the first option doesn't work, copy the private key value directly from `serviceAccountKey.json` line 5.
+
+### Troubleshooting Private Key Issues
+
+If you get an error like `"error:1E08010C:DECODER routines::unsupported"`:
+- Make sure the private key starts with `-----BEGIN PRIVATE KEY-----` and ends with `-----END PRIVATE KEY-----\n`
+- Make sure there are no extra spaces or characters
+- Try re-copying the entire key value from this file or serviceAccountKey.json
+- After updating the environment variable, redeploy the application
 
 ## Important Notes
 
 - The `FIREBASE_PRIVATE_KEY` should include the entire key with `\n` characters preserved
 - All values are already in your `serviceAccountKey.json` file
 - Make sure `serviceAccountKey.json` is in `.gitignore` (which it is) - never commit this file!
+- After adding/updating environment variables, you MUST redeploy for changes to take effect
 
