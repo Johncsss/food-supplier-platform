@@ -1,11 +1,29 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from '../shared/firebase-config';
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase - check if app already exists to prevent duplicate initialization
+let app: FirebaseApp;
+try {
+  const existingApps = getApps();
+  if (existingApps.length === 0) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApp();
+  }
+} catch (error: any) {
+  // If initialization fails, try to get existing app
+  console.error('Firebase initialization error:', error);
+  const existingApps = getApps();
+  if (existingApps.length > 0) {
+    app = existingApps[0];
+  } else {
+    // If we can't get an app and initialization failed, throw a more helpful error
+    throw new Error(`Firebase initialization failed: ${error.message}. Make sure Firebase config is valid.`);
+  }
+}
 
 // Initialize Firebase services
 export const auth = getAuth(app);
@@ -16,7 +34,12 @@ export const storage = getStorage(app);
 let analytics: any = null;
 if (typeof window !== 'undefined') {
   import('firebase/analytics').then(({ getAnalytics }) => {
-    analytics = getAnalytics(app);
+    try {
+      analytics = getAnalytics(app);
+    } catch (err) {
+      // Analytics not available or already initialized
+      console.log('Analytics not available:', err);
+    }
   }).catch(() => {
     // Analytics not available
     console.log('Analytics not available');
