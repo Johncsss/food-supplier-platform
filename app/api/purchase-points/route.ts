@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, increment, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
+import { addPointsToUser } from '@/lib/points-utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -93,33 +94,8 @@ export async function POST(request: NextRequest) {
     const userData = userDoc.data();
     const currentPoints = userData.memberPoints || 0;
 
-    // Use Admin SDK to perform atomic update and write regardless of client security rules
-    await adminDb.runTransaction(async (t) => {
-      const uRef = adminDb.collection('users').doc(userRef.id);
-      const uSnap = await t.get(uRef);
-      const existingPoints = (uSnap.data()?.memberPoints || 0) as number;
-      const newBalance = existingPoints + pointsToPurchase;
-
-      t.update(uRef, {
-        memberPoints: adminFieldValue.increment(pointsToPurchase),
-        updatedAt: new Date(),
-      });
-
-      const txRef = adminDb.collection('point_transactions').doc(`${userId}_${Date.now()}`);
-      t.set(txRef, {
-        userId,
-        pointsPurchased: pointsToPurchase,
-        amount: pointsToPurchase, // Add amount field for consistency
-        paymentAmount,
-        previousBalance: existingPoints,
-        newBalance,
-        transactionDate: new Date(),
-        purchaseDate: new Date(), // Keep for backward compatibility
-        status: 'completed',
-        type: 'purchase',
-        description: `購買 ${pointsToPurchase} 點數`
-      });
-    });
+    // Use the shared function to add points
+    await addPointsToUser(userId, pointsToPurchase, `manual_${Date.now()}`);
 
     return NextResponse.json({
       success: true,

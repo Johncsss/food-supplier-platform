@@ -1,6 +1,7 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyDeJS7QqvPpKsAAKSOeUFP_0poNGGrWswg",
   authDomain: "foodbooking-3ccec.firebaseapp.com",
+  databaseURL: "https://foodbooking-3ccec-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "foodbooking-3ccec",
   storageBucket: "foodbooking-3ccec.firebasestorage.app",
   messagingSenderId: "1079191792865",

@@ -57,7 +57,7 @@ export default function ProductDetailPage() {
             stockQuantity: data.stockQuantity || 0,
             imageUrl: imageUrl,
             imageUrls: imageUrls.length > 0 ? imageUrls : (imageUrl ? [imageUrl] : []),
-            isAvailable: data.isAvailable ?? true,
+            isAvailable: Boolean(data.isAvailable ?? true),
             supplier: data.supplier || '',
             createdAt: data.createdAt?.toDate?.() || new Date(),
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
@@ -339,7 +339,7 @@ export default function ProductDetailPage() {
               ) : (
                 <button
                   onClick={() => handleAddToCart(product)}
-                  disabled={!product.isAvailable || isDifferentCategory}
+                  disabled={!product.isAvailable || !!isDifferentCategory}
                   className="w-full bg-primary-600 text-white py-3 px-4 rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
                   title={isDifferentCategory ? `只能選擇 ${cartCategory} 類別的產品` : ''}
                 >

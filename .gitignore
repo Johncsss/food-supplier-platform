@@ -96,3 +96,4 @@ build/
 
 # Temporary files
 N
+.vercel

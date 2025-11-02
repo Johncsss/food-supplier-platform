@@ -90,8 +90,6 @@ export const translations = {
   'All Statuses': '所有狀態',
   'Date Range': '日期範圍',
   'Apply Filters': '套用篩選',
-  'Orders': '訂單',
-  'Last updated': '最後更新',
   'Order Details': '訂單詳情',
   'Member Info': '會員資訊',
   'Delivery': '配送',
@@ -108,7 +106,6 @@ export const translations = {
   'Total Amount': '總金額',
   'Delivery Date': '配送日期',
   'Member Information': '會員資訊',
-  'Restaurant Name': '餐廳名稱',
   'Member ID': '會員編號',
   'Delivery Address': '配送地址',
   'Order Items': '訂單項目',
@@ -122,15 +119,11 @@ export const translations = {
   'Save Changes': '儲存變更',
   'Cancel': '取消',
   'View Details': '查看詳情',
-  'Edit Order': '編輯訂單',
 
   // Admin Sidebar
   'FoodSupplier': '食品供應商',
   'Admin Panel': '管理面板',
-  'Dashboard': '儀表板',
-  'Orders': '訂單',
   'Members': '會員',
-  'Products': '產品',
   'Inventory': '庫存',
   'Analytics': '分析',
   'Settings': '設定',
@@ -152,7 +145,6 @@ export const translations = {
   'Min': '最低',
   'In Stock': '有庫存',
   'No products found': '找不到產品',
-  'Try adjusting your search terms or filters to find what you\'re looking for.': '嘗試調整搜尋條件或篩選器來找到您要找的內容。',
 
   // Product Names and Descriptions
   'Fresh Organic Tomatoes': '新鮮有機番茄',
@@ -225,7 +217,6 @@ export const translations = {
   'Cookie Policy': 'Cookie 政策',
 
   // Common
-  'items': '項目',
   'Sarah Johnson': '莎拉·約翰遜',
   'Michael Chen': '陳邁克',
   'Emily Rodriguez': '艾米莉·羅德里格斯',

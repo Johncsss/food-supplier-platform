@@ -183,9 +183,9 @@ export default function UserOrders() {
         } catch (firestoreError) {
           console.error('Error fetching orders from Firestore:', firestoreError);
           console.error('Firestore error details:', {
-            code: firestoreError.code,
-            message: firestoreError.message,
-            stack: firestoreError.stack
+            code: firestoreError instanceof Error ? (firestoreError as any).code : undefined,
+            message: firestoreError instanceof Error ? firestoreError.message : String(firestoreError),
+            stack: firestoreError instanceof Error ? firestoreError.stack : undefined
           });
           // If Firestore fails, show empty orders
           fetchedOrders = [];
@@ -244,7 +244,7 @@ export default function UserOrders() {
         customerName: order.userEmail || 'Customer',
         customerEmail: order.userEmail || '',
         items: order.items.map(item => ({
-          name: item.productName,
+          productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice
@@ -252,9 +252,7 @@ export default function UserOrders() {
         subtotal: order.totalAmount,
         tax: 0,
         total: order.totalAmount,
-        deliveryAddress: order.deliveryAddress,
-        deliveryDate: order.deliveryDate,
-        status: order.status
+        deliveryAddress: order.deliveryAddress
       };
 
       await generateInvoicePDF(invoiceData);
@@ -274,8 +272,8 @@ export default function UserOrders() {
     if (!selectedOrder || !user) return;
 
     try {
-      // Fetch supplier name from the items
-      const supplierName = selectedOrder.items[0]?.supplier || selectedOrder.supplier || '';
+      // Fetch supplier name from the order
+      const supplierName = (selectedOrder as any).supplier || selectedOrder.supplierId || '';
       
       const response = await fetch('/api/create-complaint', {
         method: 'POST',
@@ -539,8 +537,8 @@ export default function UserOrders() {
       {selectedOrder && (
         <ComplaintModal
           orderId={selectedOrder.id}
-          supplierId={selectedOrder.items[0]?.supplier || selectedOrder.supplier || ''}
-          supplierCompanyName={selectedOrder.items[0]?.supplier || selectedOrder.supplier || ''}
+          supplierId={(selectedOrder as any).supplier || selectedOrder.supplierId || ''}
+          supplierCompanyName={(selectedOrder as any).supplier || selectedOrder.supplierId || ''}
           isOpen={complaintModalOpen}
           onClose={() => {
             setComplaintModalOpen(false);

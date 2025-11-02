@@ -44,10 +44,10 @@ export async function GET(request: NextRequest) {
     const transactions = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    }));
+    })) as any[];
 
     // Sort transactions by transactionDate in descending order (newest first)
-    transactions.sort((a, b) => {
+    transactions.sort((a: any, b: any) => {
       const dateA = a.transactionDate?.toDate?.() || new Date(a.transactionDate) || new Date(a.purchaseDate) || new Date(0);
       const dateB = b.transactionDate?.toDate?.() || new Date(b.transactionDate) || new Date(b.purchaseDate) || new Date(0);
       return dateB.getTime() - dateA.getTime();

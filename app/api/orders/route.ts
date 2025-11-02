@@ -77,9 +77,9 @@ export async function GET(request: NextRequest) {
           createdAt: data.createdAt?.toDate?.() || null,
           updatedAt: data.updatedAt?.toDate?.() || null,
           deliveryDate: data.deliveryDate?.toDate?.() || null
-        };
+        } as any;
       })
-      .filter(orderData => {
+      .filter((orderData: any) => {
         // Check if order's top-level supplier field matches either ID or companyName
         const matchesId = orderData.supplier === supplierId;
         const matchesCompanyName = companyName && orderData.supplier === companyName;
@@ -106,9 +106,9 @@ export async function GET(request: NextRequest) {
           createdAt: data.createdAt?.toDate?.() || null,
           updatedAt: data.updatedAt?.toDate?.() || null,
           deliveryDate: data.deliveryDate?.toDate?.() || null
-        };
+        } as any;
       })
-      .filter(orderData => {
+      .filter((orderData: any) => {
         // Skip if already found via top-level supplier field
         const alreadyFound = ordersWithSupplierField.some(o => o.id === orderData.id);
         if (alreadyFound) return false;

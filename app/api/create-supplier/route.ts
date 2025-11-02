@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import admin from 'firebase-admin';
-
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-  try {
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_CONFIG) {
-      admin.initializeApp();
-    } else {
-      const serviceAccount = require('../../../../serviceAccountKey.json');
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-      });
-    }
-  } catch (err) {
-    console.warn('Firebase Admin initialization warning:', err);
-  }
-}
+import admin, { ensureFirebaseAdminInitialized } from '@/lib/firebaseAdmin';
 
 export async function POST(request: NextRequest) {
   try {
+    // Ensure Firebase Admin is initialized before using it
+    ensureFirebaseAdminInitialized();
+
     const body = await request.json();
-    const { name, companyName, email, password, phone, status, address } = body;
+    const { name, companyName, email, password, phone, status, address, category } = body;
 
     // Validate required fields
     if (!name || !companyName || !email || !password || !phone) {
@@ -50,6 +37,7 @@ export async function POST(request: NextRequest) {
       phone,
       status: status || 'active',
       address: address || '',
+      category: category || '',
       role: 'supplier',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -67,6 +55,7 @@ export async function POST(request: NextRequest) {
         phone,
         status: status || 'active',
         address: address || '',
+        category: category || '',
       }
     });
   } catch (error: any) {

@@ -405,6 +405,20 @@ export default function AdminLayout({
       {/* Main content */}
       <div className="flex-1 flex flex-col ml-0">
         {/* Top bar */}
+        <div className="sticky top-0 z-10 bg-white shadow-sm border-b border-gray-200">
+          <div className="flex items-center justify-between h-16 px-4">
+            <div className="flex items-center">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 mr-2"
+                aria-label="Open menu"
+              >
+                <Menu className="w-5 h-5 text-gray-600" />
+              </button>
+              <h1 className="text-xl font-semibold text-gray-900">{t('Admin Panel')}</h1>
+            </div>
+          </div>
+        </div>
 
         {/* Page content */}
         <main className="flex-1 p-4">

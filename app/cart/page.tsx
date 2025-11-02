@@ -92,6 +92,10 @@ export default function Cart() {
       // Regular checkout for non-demo users - use API endpoint instead of direct Firestore
       console.log('Creating order via API endpoint...');
       
+      if (!firebaseUser) {
+        throw new Error('User not authenticated');
+      }
+      
       // Build user data for API
       const userData = {
         id: firebaseUser.uid,

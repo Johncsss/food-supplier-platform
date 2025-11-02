@@ -159,7 +159,7 @@ export default function AdminInventory() {
           });
 
           // Calculate new status
-          const newStatus = newStock === 0 ? 'out' : 
+          const newStatus: 'low' | 'normal' | 'high' | 'out' = newStock === 0 ? 'out' : 
                            newStock <= selectedItem.minStock ? 'low' : 
                            newStock >= selectedItem.maxStock * 0.8 ? 'high' : 'normal';
 

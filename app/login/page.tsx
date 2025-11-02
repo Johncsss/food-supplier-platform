@@ -37,31 +37,41 @@ export default function Login() {
         try {
           const tokenResult = await firebaseUser.getIdTokenResult();
           const role = tokenResult?.claims?.role;
-          const isAdmin = tokenResult?.claims?.admin;
+          const hasAdminClaim = tokenResult?.claims?.admin;
           
           // Only redirect if we're on the login page
           if (window.location.pathname === '/login') {
-            console.log('Already logged in - redirecting based on role:', role);
+            console.log('Already logged in - redirecting based on role:', role, 'isAdmin from hook:', isAdmin, 'hasAdminClaim:', hasAdminClaim);
             
-                  // Use userRole from AuthProvider which checks both custom claims and Firestore
-      const effectiveRole = userRole || role;
-      
-      // Check if supplier first - suppliers should always go to /supplier
-      if (effectiveRole === 'supplier' || isSupplier) {
-        window.location.href = '/supplier';
-        return;
-      }
-      
-      if (effectiveRole === 'salesMember') {
-        const salesName = (tokenResult?.claims?.name as string) || (firebaseUser.displayName as string) || 'unknown';
-        window.location.href = `/sales/${encodeURIComponent(salesName)}`;
-      } else if (effectiveRole === 'salesTeam') {
-        window.location.href = '/sales-team';
-      } else if (firebaseUser.email === 'admin@test.com' || isAdmin) {
-        window.location.href = '/admin';
-      } else {
-        window.location.href = '/dashboard';
-      }
+            // Use userRole from AuthProvider which checks both custom claims and Firestore
+            const effectiveRole = userRole || role;
+            
+            // Priority order: Admin → Supplier → Sales roles → Member (default)
+            
+            // 1. Admin should go to /admin (食品供應商 管理面板)
+            if (isAdmin || firebaseUser.email === 'admin@test.com' || hasAdminClaim) {
+              window.location.href = '/admin';
+              return;
+            }
+            
+            // 2. Supplier should go to /supplier (供應商系統 Supplier Panel)
+            if (effectiveRole === 'supplier' || isSupplier) {
+              window.location.href = '/supplier';
+              return;
+            }
+            
+            // 3. Sales roles
+            if (effectiveRole === 'salesMember') {
+              const salesName = (tokenResult?.claims?.name as string) || (firebaseUser.displayName as string) || 'unknown';
+              window.location.href = `/sales/${encodeURIComponent(salesName)}`;
+              return;
+            } else if (effectiveRole === 'salesTeam' || isSalesTeam) {
+              window.location.href = '/sales-team';
+              return;
+            }
+            
+            // 4. Default: Member goes to /dashboard (餐廳)
+            window.location.href = '/dashboard';
           }
         } catch (error) {
           console.error('Error checking user role:', error);
@@ -101,29 +111,39 @@ export default function Login() {
       // Get token with latest claims (no need to force refresh immediately after login)
       const tokenResult = await currentUser.getIdTokenResult();
       const role = tokenResult?.claims?.role;
-      const isAdmin = tokenResult?.claims?.admin;
+      const hasAdminClaim = tokenResult?.claims?.admin;
       
-      console.log('Login redirect - Role:', role, 'IsAdmin:', isAdmin);
+      console.log('Login redirect - Role:', role, 'IsAdmin:', isAdmin, 'HasAdminClaim:', hasAdminClaim);
       
       // Use userRole from AuthProvider which checks both custom claims and Firestore
       const effectiveRole = userRole || role;
       
-      // Check if supplier first - suppliers should always go to /supplier
+      // Priority order: Admin → Supplier → Sales roles → Member (default)
+      
+      // 1. Admin should go to /admin (食品供應商 管理面板)
+      if (isAdmin || data.email === 'admin@test.com' || currentUser.email === 'admin@test.com' || hasAdminClaim) {
+        window.location.href = '/admin';
+        return;
+      }
+      
+      // 2. Supplier should go to /supplier (供應商系統 Supplier Panel)
       if (effectiveRole === 'supplier' || isSupplier) {
         window.location.href = '/supplier';
         return;
       }
       
+      // 3. Sales roles
       if (effectiveRole === 'salesMember') {
         const salesName = (tokenResult?.claims?.name as string) || (currentUser.displayName as string) || 'unknown';
         window.location.href = `/sales/${encodeURIComponent(salesName)}`;
-      } else if (effectiveRole === 'salesTeam') {
+        return;
+      } else if (effectiveRole === 'salesTeam' || isSalesTeam) {
         window.location.href = '/sales-team';
-      } else if (data.email === 'admin@test.com' || isAdmin) {
-        window.location.href = '/admin';
-      } else {
-        window.location.href = '/dashboard';
+        return;
       }
+      
+      // 4. Default: Member goes to /dashboard (餐廳)
+      window.location.href = '/dashboard';
     } catch (error: any) {
       console.error('Login error:', error);
       let errorMessage = '登入時發生錯誤';

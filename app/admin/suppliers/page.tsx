@@ -14,10 +14,13 @@ import {
   AlertCircle,
   Clock,
   X,
-  Calendar
+  Calendar,
+  Package
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { Category, Product } from '@/shared/types';
+import { categories as defaultCategories } from '@/shared/products';
 
 interface Supplier {
   id: string;
@@ -28,23 +31,29 @@ interface Supplier {
   status: 'active' | 'inactive' | 'pending';
   joinDate: string;
   address: string;
+  category?: string;
 }
 
 export default function AdminSuppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<Category[]>(defaultCategories);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showProductsModal, setShowProductsModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [supplierProducts, setSupplierProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
     companyName: '',
     email: '',
     phone: '',
     status: 'active' as 'active' | 'inactive' | 'pending',
-    address: ''
+    address: '',
+    category: ''
   });
   const [addForm, setAddForm] = useState({
     name: '',
@@ -53,10 +62,40 @@ export default function AdminSuppliers() {
     password: '',
     phone: '',
     status: 'active' as 'active' | 'inactive' | 'pending',
-    address: ''
+    address: '',
+    category: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch categories from Firestore
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const categoriesRef = collection(db, 'categories');
+        const categoriesSnapshot = await getDocs(query(categoriesRef, orderBy('name')));
+        const fetchedCategories: Category[] = categoriesSnapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || '',
+            description: data.description || '',
+            imageUrl: data.imageUrl || '',
+            subcategories: data.subcategories || [],
+          };
+        });
+        
+        // Use Firestore categories if available, otherwise fallback to default categories
+        const categoriesToUse = fetchedCategories.length > 0 ? fetchedCategories : defaultCategories;
+        setCategories(categoriesToUse);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        setCategories(defaultCategories);
+      }
+    };
+
+    fetchCategories();
+  }, []);
 
   // Fetch suppliers from Firestore
   useEffect(() => {
@@ -83,6 +122,7 @@ export default function AdminSuppliers() {
               joinDate: data.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
               address: typeof data.address === 'string' ? data.address : 
                        data.address ? `${data.address.street}, ${data.address.city}, ${data.address.state} ${data.address.zipCode}` : '',
+              category: data.category || '',
             };
           });
         setSuppliers(fetchedSuppliers);
@@ -150,6 +190,49 @@ export default function AdminSuppliers() {
     setShowViewModal(true);
   };
 
+  const handleViewProducts = async (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setShowProductsModal(true);
+    setLoadingProducts(true);
+    
+    try {
+      // Fetch products for this supplier
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('supplier', '==', supplier.id));
+      const snapshot = await getDocs(q);
+      
+      const products: Product[] = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || '',
+          productCode: data.productCode || '',
+          description: data.description || '',
+          category: data.category || '',
+          subcategory: data.subcategory || '',
+          price: data.price || 0,
+          unit: data.unit || '',
+          minOrderQuantity: data.minOrderQuantity || 1,
+          stockQuantity: data.stockQuantity || 0,
+          imageUrl: data.imageUrl || '',
+          imageUrls: data.imageUrls || [],
+          isAvailable: data.isAvailable ?? true,
+          supplier: data.supplier || '',
+          createdAt: data.createdAt?.toDate?.() || new Date(),
+          updatedAt: data.updatedAt?.toDate?.() || new Date(),
+        };
+      });
+      
+      setSupplierProducts(products);
+    } catch (error) {
+      console.error('Error fetching supplier products:', error);
+      setError('載入產品失敗');
+      setSupplierProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
   const handleEditSupplier = (supplier: Supplier) => {
     setSelectedSupplier(supplier);
     setEditForm({
@@ -158,7 +241,8 @@ export default function AdminSuppliers() {
       email: supplier.email,
       phone: supplier.phone,
       status: supplier.status,
-      address: supplier.address
+      address: supplier.address,
+      category: supplier.category || ''
     });
     setShowEditModal(true);
   };
@@ -178,6 +262,7 @@ export default function AdminSuppliers() {
           phone: editForm.phone,
           status: editForm.status,
           address: editForm.address,
+          category: editForm.category || '',
           updatedAt: serverTimestamp()
         });
 
@@ -191,7 +276,8 @@ export default function AdminSuppliers() {
                 email: editForm.email,
                 phone: editForm.phone,
                 status: editForm.status,
-                address: editForm.address
+                address: editForm.address,
+                category: editForm.category || ''
               }
             : supplier
         );
@@ -231,6 +317,7 @@ export default function AdminSuppliers() {
           phone: addForm.phone,
           status: addForm.status,
           address: addForm.address,
+          category: addForm.category || '',
         }),
       });
 
@@ -249,7 +336,8 @@ export default function AdminSuppliers() {
         phone: result.supplier.phone,
         status: result.supplier.status,
         joinDate: new Date().toISOString().split('T')[0],
-        address: result.supplier.address
+        address: result.supplier.address,
+        category: result.supplier.category || ''
       };
 
       setSuppliers([supplierForDisplay, ...suppliers]);
@@ -263,7 +351,8 @@ export default function AdminSuppliers() {
         password: '',
         phone: '',
         status: 'active',
-        address: ''
+        address: '',
+        category: ''
       });
     } catch (error: any) {
       console.error('Error adding supplier:', error);
@@ -424,6 +513,13 @@ export default function AdminSuppliers() {
                         <Eye className="w-4 h-4" />
                       </button>
                       <button 
+                        onClick={() => handleViewProducts(supplier)}
+                        className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
+                        title="查看產品"
+                      >
+                        <Package className="w-4 h-4" />
+                      </button>
+                      <button 
                         onClick={() => handleEditSupplier(supplier)}
                         className="text-gray-600 hover:text-gray-900 p-1 rounded hover:bg-gray-50 transition-colors"
                         title="編輯供應商"
@@ -492,6 +588,10 @@ export default function AdminSuppliers() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700">地址</label>
                       <p className="text-sm text-gray-900">{selectedSupplier.address}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">類別</label>
+                      <p className="text-sm text-gray-900">{selectedSupplier.category || '未設定'}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">加入日期</label>
@@ -609,6 +709,20 @@ export default function AdminSuppliers() {
                 </div>
                 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">類別</label>
+                  <select
+                    value={addForm.category}
+                    onChange={(e) => setAddForm({...addForm, category: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    <option value="">選擇類別</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">供應商狀態</label>
                   <select
                     value={addForm.status}
@@ -723,6 +837,20 @@ export default function AdminSuppliers() {
                 </div>
                 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">類別</label>
+                  <select
+                    value={editForm.category}
+                    onChange={(e) => setEditForm({...editForm, category: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    <option value="">選擇類別</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">供應商狀態</label>
                   <select
                     value={editForm.status}
@@ -763,6 +891,150 @@ export default function AdminSuppliers() {
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? '儲存中...' : '儲存變更'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Supplier Products Modal */}
+      {showProductsModal && selectedSupplier && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-4/5 max-w-6xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-semibold text-gray-900">
+                    {selectedSupplier.companyName} - 產品列表
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">供應商：{selectedSupplier.name}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowProductsModal(false);
+                    setSupplierProducts([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {loadingProducts ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">載入產品中...</p>
+                </div>
+              ) : supplierProducts.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">尚無產品</h3>
+                  <p className="text-gray-600">此供應商尚未添加任何產品</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          產品圖片
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          產品名稱
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          類別
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          價格
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          庫存
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          狀態
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {supplierProducts.map((product) => (
+                        <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex-shrink-0 h-16 w-16">
+                              {product.imageUrl || (product.imageUrls && product.imageUrls.length > 0) ? (
+                                <img
+                                  src={product.imageUrls?.[0] || product.imageUrl}
+                                  alt={product.name}
+                                  className="h-16 w-16 rounded-lg object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src = '/placeholder-product.svg';
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-16 w-16 rounded-lg bg-gray-200 flex items-center justify-center">
+                                  <Package className="w-8 h-8 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                            {product.productCode && (
+                              <div className="text-sm text-gray-500">編號：{product.productCode}</div>
+                            )}
+                            {product.description && (
+                              <div className="text-xs text-gray-400 mt-1 line-clamp-2">{product.description}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{product.category}</div>
+                            {product.subcategory && (
+                              <div className="text-xs text-gray-500">{product.subcategory}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              ${product.price.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500">/{product.unit}</div>
+                            {product.minOrderQuantity > 1 && (
+                              <div className="text-xs text-gray-500">最少訂購：{product.minOrderQuantity}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{product.stockQuantity}</div>
+                            <div className="text-xs text-gray-500">{product.unit}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              product.isAvailable 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {product.isAvailable ? '可用' : '不可用'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  <div className="mt-4 text-sm text-gray-600">
+                    共 {supplierProducts.length} 個產品
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowProductsModal(false);
+                    setSupplierProducts([]);
+                  }}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  關閉
                 </button>
               </div>
             </div>

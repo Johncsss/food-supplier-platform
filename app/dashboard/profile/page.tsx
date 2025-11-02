@@ -53,13 +53,19 @@ export default function Profile() {
   const handleInputChange = (field: string, value: string) => {
     if (field.includes('.')) {
       const [parent, child] = field.split('.');
-      setFormData(prev => ({
-        ...prev,
-        [parent]: {
-          ...prev[parent as keyof typeof prev],
-          [child]: value
+      setFormData(prev => {
+        const parentValue = prev[parent as keyof typeof prev];
+        if (typeof parentValue === 'object' && parentValue !== null && !Array.isArray(parentValue)) {
+          return {
+            ...prev,
+            [parent]: {
+              ...parentValue,
+              [child]: value
+            }
+          };
         }
-      }));
+        return prev;
+      });
     } else {
       setFormData(prev => ({
         ...prev,

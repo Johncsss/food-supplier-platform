@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { headers } from 'next/headers';
-import { addPointsToUser } from '@/app/api/purchase-points/route';
+import { addPointsToUser } from '@/lib/points-utils';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();

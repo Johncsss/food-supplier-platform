@@ -1,14 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as admin from 'firebase-admin';
-
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-  const serviceAccount = require('@/../serviceAccountKey.json');
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${serviceAccount.project_id}-default-rtdb.firebaseio.com/`
-  });
-}
+import admin from '@/lib/firebaseAdmin';
 
 export async function POST(request: NextRequest) {
   try {
