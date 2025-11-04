@@ -2,12 +2,26 @@ import Link from 'next/link';
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
 import UnauthorizedHandler from '@/components/UnauthorizedHandler';
+import CategoriesSection from '@/components/ui/CategoriesSection';
 import { Check, Star, Truck, Shield, Clock, Users } from 'lucide-react';
 import { t } from '@/lib/translate';
 import { categories as defaultCategories } from '@/shared/products';
 import { Category } from '@/shared/types';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc } from 'firebase/firestore';
+
+async function getHomepageCmsData() {
+  try {
+    const pageDoc = await getDoc(doc(db, 'pages', 'homepage'));
+    if (pageDoc.exists()) {
+      return pageDoc.data().areas || null;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching homepage CMS data:', error);
+    return null;
+  }
+}
 
 async function getCategoriesWithCounts() {
   try {
@@ -58,28 +72,95 @@ async function getCategoriesWithCounts() {
 
 export default async function Home() {
   const categoriesWithCounts = await getCategoriesWithCounts();
+  const cmsData = await getHomepageCmsData();
+  const heroData = cmsData?.hero || {};
+  // Validate banner URL - only accept Firebase Storage URLs or valid HTTPS URLs
+  const rawBannerUrl = heroData.bannerImageUrl || '';
+  let bannerImageUrl = '';
+  if (rawBannerUrl && rawBannerUrl.trim() !== '') {
+    // Check if it's a valid Firebase Storage URL or a valid HTTPS URL
+    if (rawBannerUrl.startsWith('https://firebasestorage.googleapis.com/')) {
+      bannerImageUrl = rawBannerUrl;
+    } else if (rawBannerUrl.startsWith('https://') && 
+               !rawBannerUrl.includes('unsplash.com') &&
+               !rawBannerUrl.match(/^photo-\d+-[a-f0-9]+$/)) {
+      // Valid HTTPS URL that's not unsplash and not a photo ID
+      bannerImageUrl = rawBannerUrl;
+    } else {
+      // Invalid URL - log for debugging
+      console.warn('Invalid banner URL detected:', rawBannerUrl);
+      bannerImageUrl = '';
+    }
+  }
+  const heroTitle = heroData.title || t('Premium Food Supply for');
+  const heroTitleSpan = heroData.titleSpan || t('Restaurants');
+  const heroDescription = heroData.description || t('Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.');
+  const button1Text = heroData.button1Text || t('Start Your Membership');
+  const button1Link = heroData.button1Link || '/register';
+  const button2Text = heroData.button2Text || t('Browse Products');
+  const button2Link = heroData.button2Link || '/products';
+  
   return (
     <div className="min-h-screen bg-gray-50">
       <UnauthorizedHandler />
       <Header />
       
+      {/* Hero Banner Image Section */}
+      {bannerImageUrl && bannerImageUrl.trim() !== '' && (
+        <section className="w-full bg-gray-100">
+          <div className="w-full overflow-hidden">
+            <img 
+              src={bannerImageUrl} 
+              alt="Hero banner" 
+              className="w-full h-auto object-cover"
+              style={{ maxHeight: '600px', width: '100%', display: 'block' }}
+              onError={(e) => {
+                console.error('Failed to load hero banner image. URL:', bannerImageUrl);
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                // Hide the entire section if image fails to load
+                const section = target.closest('section');
+                if (section) {
+                  section.style.display = 'none';
+                }
+              }}
+              onLoad={() => {
+                console.log('Hero banner image loaded successfully:', bannerImageUrl);
+              }}
+            />
+          </div>
+        </section>
+      )}
+
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-primary-600 to-primary-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+      <section 
+        className={`${bannerImageUrl ? 'bg-white' : 'bg-gradient-to-br from-primary-600 to-primary-800'} ${bannerImageUrl ? 'text-gray-900' : 'text-white'} py-24`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              {t('Premium Food Supply for')}
-              <span className="text-secondary-300"> {t('Restaurants')}</span>
+            <h1 className={`text-4xl md:text-6xl font-bold mb-6 ${bannerImageUrl ? 'text-gray-900' : 'text-white'}`}>
+              {heroTitleSpan && heroTitle.includes(heroTitleSpan) ? (
+                <>
+                  {heroTitle.split(heroTitleSpan)[0]}
+                  <span className={bannerImageUrl ? 'text-primary-600' : 'text-secondary-300'}>{heroTitleSpan}</span>
+                  {heroTitle.split(heroTitleSpan)[1]}
+                </>
+              ) : (
+                <>
+                  {heroTitle}
+                  {heroTitleSpan && <span className={bannerImageUrl ? 'text-primary-600' : 'text-secondary-300'}> {heroTitleSpan}</span>}
+                </>
+              )}
             </h1>
-            <p className="text-xl md:text-2xl mb-8 text-primary-100 max-w-3xl mx-auto">
-              {t('Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.')}
+            <p className={`text-xl md:text-2xl mb-8 max-w-3xl mx-auto ${bannerImageUrl ? 'text-gray-600' : 'text-primary-100'}`}>
+              {heroDescription}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/register" className="btn-secondary text-lg px-8 py-4">
-                {t('Start Your Membership')}
+              <Link href={button1Link} className={`${bannerImageUrl ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'btn-secondary'} text-lg px-8 py-4 rounded-lg transition-colors`}>
+                {button1Text}
               </Link>
-              <Link href="/products" className="btn-outline text-lg px-8 py-4 border-white text-white hover:bg-white hover:text-primary-600">
-                {t('Browse Products')}
+              <Link href={button2Link} className={`${bannerImageUrl ? 'border-2 border-primary-600 text-primary-600 hover:bg-primary-600 hover:text-white' : 'btn-outline border-white text-white hover:bg-white hover:text-primary-600'} text-lg px-8 py-4 rounded-lg transition-colors`}>
+                {button2Text}
               </Link>
             </div>
           </div>
@@ -162,43 +243,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Categories Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              產品類別
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              為您的餐廳提供所需的一切
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categoriesWithCounts.map((category) => (
-              <div key={category.id} className="card overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
-                <div className="h-48 bg-cover bg-center relative" style={{ backgroundImage: `url(${category.imageUrl})` }}>
-                  <div className="absolute inset-0 bg-black bg-opacity-40 hover:bg-opacity-30 transition-opacity" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white text-xl font-bold z-10 text-center px-4">{category.name}</span>
-                  </div>
-                </div>
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold mb-2">{category.name}</h3>
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">{category.description}</p>
-                  <p className="text-gray-600 text-sm mb-4">{category.productCount} {t('items')}</p>
-                  <Link href={`/products?category=${encodeURIComponent(category.name)}`} className="text-primary-600 hover:text-primary-700 font-medium inline-flex items-center">
-                    瀏覽產品
-                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Categories Section - Only visible to logged-in users */}
+      <CategoriesSection categories={categoriesWithCounts} />
 
       {/* Testimonials Section */}
       <section className="py-20 bg-white">

@@ -166,6 +166,11 @@ export default function AdminLayout({
       href: '/admin/settings',
       icon: Settings,
     },
+    {
+      name: '內容管理',
+      href: '/admin/content',
+      icon: Home,
+    },
   ];
 
   // Filter sidebar items based on configuration
@@ -218,22 +223,22 @@ export default function AdminLayout({
         )}
 
         {/* Sidebar */}
-        <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+        <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0B8628] text-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}>
           {/* Sidebar Header */}
-          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+          <div className="flex items-center justify-between h-16 px-6 border-b border-white/20">
             <div className="flex items-center space-x-3">
               <div>
-                <h1 className="text-lg font-bold text-gray-900">{t('FoodSupplier')}</h1>
-                <p className="text-xs text-gray-500">{t('Admin Panel')} (Demo)</p>
+                <h1 className="text-lg font-bold text-white">{t('FoodSupplier')}</h1>
+                <p className="text-xs text-white/80">{t('Admin Panel')} (Demo)</p>
               </div>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+              className="lg:hidden p-2 rounded-lg hover:bg-white/10"
             >
-              <X className="w-5 h-5 text-gray-600" />
+              <X className="w-5 h-5 text-white" />
             </button>
           </div>
 
@@ -248,13 +253,13 @@ export default function AdminLayout({
                     href={item.href}
                     className={`group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors ${
                       isActive
-                        ? 'bg-primary-100 text-primary-700 border-r-2 border-primary-600'
-                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                        ? 'bg-white/20 text-white border-r-2 border-white'
+                        : 'text-white hover:bg-white/10 hover:text-white'
                     }`}
                     onClick={() => setSidebarOpen(false)}
                   >
                     <item.icon className={`w-5 h-5 mr-3 ${
-                      isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-500'
+                      isActive ? 'text-white' : 'text-white/70 group-hover:text-white'
                     }`} />
                     <span className="flex-1">{item.name}</span>
                     {item.badge && (
@@ -269,16 +274,16 @@ export default function AdminLayout({
           </nav>
 
           {/* Admin Info */}
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-white/20">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-                <span className="text-sm font-medium text-primary-700">
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                <span className="text-sm font-medium text-white">
                   {effectiveUser?.name?.charAt(0).toUpperCase() || 'A'}
                 </span>
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">{effectiveUser?.name || t('Admin User')}</p>
-                <p className="text-xs text-gray-500">{effectiveUser?.email} (Demo)</p>
+                <p className="text-sm font-medium text-white">{effectiveUser?.name || t('Admin User')}</p>
+                <p className="text-xs text-white/80">{effectiveUser?.email} (Demo)</p>
               </div>
             </div>
           </div>
@@ -323,22 +328,22 @@ export default function AdminLayout({
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0B8628] text-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+        <div className="flex items-center justify-between h-16 px-6 border-b border-white/20">
           <div className="flex items-center space-x-3">
             <div>
-              <h1 className="text-lg font-bold text-gray-900">{t('FoodSupplier')}</h1>
-              <p className="text-xs text-gray-500">{t('Admin Panel')}</p>
+              <h1 className="text-lg font-bold text-white">{t('FoodSupplier')}</h1>
+              <p className="text-xs text-white/80">{t('Admin Panel')}</p>
             </div>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+            className="lg:hidden p-2 rounded-lg hover:bg-white/10"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
@@ -353,13 +358,13 @@ export default function AdminLayout({
                   href={item.href}
                   className={`group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-primary-100 text-primary-700 border-r-2 border-primary-600'
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-white/20 text-white border-r-2 border-white'
+                      : 'text-white hover:bg-white/10 hover:text-white'
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
                   <item.icon className={`w-5 h-5 mr-3 ${
-                    isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-500'
+                    isActive ? 'text-white' : 'text-white/70 group-hover:text-white'
                   }`} />
                   <span className="flex-1">{item.name}</span>
                   {item.badge && (
@@ -374,19 +379,19 @@ export default function AdminLayout({
         </nav>
 
         {/* Admin Info */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-white/20">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-              <span className="text-sm font-medium text-primary-700">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+              <span className="text-sm font-medium text-white">
                 {user?.name?.charAt(0).toUpperCase() || 'A'}
               </span>
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">{user?.name || t('Admin User')}</p>
-              <p className="text-xs text-gray-500">{user?.email}</p>
+              <p className="text-sm font-medium text-white">{user?.name || t('Admin User')}</p>
+              <p className="text-xs text-white/80">{user?.email}</p>
             </div>
             <button
-              className="p-1 rounded-lg hover:bg-gray-100"
+              className="p-1 rounded-lg hover:bg-white/10"
               onClick={async () => {
                 try {
                   await signOut();
@@ -396,7 +401,7 @@ export default function AdminLayout({
                 }
               }}
             >
-              <LogOut className="w-4 h-4 text-gray-500" />
+              <LogOut className="w-4 h-4 text-white" />
             </button>
           </div>
         </div>

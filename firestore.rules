@@ -106,6 +106,23 @@ service cloud.firestore {
       );
     }
 
+    // Pages collection (CMS) - admins can write, authenticated users can read mobile-app page
+    match /pages/{pageId} {
+      // Allow authenticated users to read mobile-app page (for mobile app to display banners)
+      allow read: if request.auth != null && (
+        request.auth.token.admin == true || 
+        pageId == 'mobile-app'
+      );
+      // Only admins can write
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Settings collection - anyone can read, only admins can write
+    match /settings/{settingId} {
+      allow read: if true; // Anyone can read settings (logo, etc.)
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
     // Default rule - deny all other access
     match /{document=**} {
       allow read, write: if false;

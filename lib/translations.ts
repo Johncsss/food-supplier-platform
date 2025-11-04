@@ -121,7 +121,7 @@ export const translations = {
   'View Details': '查看詳情',
 
   // Admin Sidebar
-  'FoodSupplier': '食品供應商',
+  'FoodSupplier': 'iFoodPulse',
   'Admin Panel': '管理面板',
   'Members': '會員',
   'Inventory': '庫存',

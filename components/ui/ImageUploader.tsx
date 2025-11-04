@@ -10,6 +10,7 @@ interface ImageUploaderProps {
   onError?: (error: string) => void;
   disabled?: boolean;
   className?: string;
+  folder?: string;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -17,7 +18,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   onChange,
   onError,
   disabled = false,
-  className = ''
+  className = '',
+  folder = 'product_images'
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       setPreviewUrl(preview);
 
       // Upload to Firebase Storage
-      const result = await uploadImage(file);
+      const result = await uploadImage(file, folder);
       
       if (result.success && result.url) {
         onChange(result.url);

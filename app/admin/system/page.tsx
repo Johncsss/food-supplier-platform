@@ -13,7 +13,8 @@ import {
   Briefcase,
   Store,
   Settings,
-  Cog
+  Cog,
+  Home
 } from 'lucide-react';
 
 interface MenuConfig {
@@ -27,14 +28,14 @@ interface MenuConfig {
 const DEFAULT_MENU_CONFIG: MenuConfig[] = [
   {
     id: 'dashboard',
-    name: 'Dashboard',
+    name: '儀表板',
     href: '/admin',
     icon: 'LayoutDashboard',
     enabled: true,
   },
   {
     id: 'orders',
-    name: 'Orders',
+    name: '訂單',
     href: '/admin/orders',
     icon: 'ShoppingCart',
     enabled: true,
@@ -62,21 +63,21 @@ const DEFAULT_MENU_CONFIG: MenuConfig[] = [
   },
   {
     id: 'products',
-    name: 'Products',
+    name: '產品',
     href: '/admin/products',
     icon: 'Package',
     enabled: true,
   },
   {
     id: 'inventory',
-    name: 'Inventory',
+    name: '庫存',
     href: '/admin/inventory',
     icon: 'BarChart3',
     enabled: true,
   },
   {
     id: 'settings',
-    name: 'Settings',
+    name: '設定',
     href: '/admin/settings',
     icon: 'Settings',
     enabled: true,
@@ -86,6 +87,13 @@ const DEFAULT_MENU_CONFIG: MenuConfig[] = [
     name: '系統設定',
     href: '/admin/system',
     icon: 'Cog',
+    enabled: true,
+  },
+  {
+    id: 'content',
+    name: '內容管理',
+    href: '/admin/content',
+    icon: 'Home',
     enabled: true,
   },
 ];
@@ -107,7 +115,33 @@ export default function AdminSystem() {
         if (snap.exists()) {
           const data = snap.data() as any;
           if (Array.isArray(data.menus) && data.menus.length > 0) {
-            setMenus(data.menus as MenuConfig[]);
+            // Merge existing menus with default config to add any new items
+            const existingMenusMap = new Map(
+              data.menus.map((m: MenuConfig) => [m.id, m])
+            );
+            const mergedMenus = DEFAULT_MENU_CONFIG.map(defaultMenu => {
+              const existing = existingMenusMap.get(defaultMenu.id);
+              if (existing) {
+                // Preserve existing enabled state and other properties
+                return {
+                  ...defaultMenu,
+                  enabled: existing.enabled !== undefined ? existing.enabled : defaultMenu.enabled,
+                };
+              }
+              // New item from default config
+              return defaultMenu;
+            });
+            
+            // Check if there are any new items to add
+            const hasNewItems = mergedMenus.length !== data.menus.length || 
+              DEFAULT_MENU_CONFIG.some(defaultMenu => !existingMenusMap.has(defaultMenu.id));
+            
+            if (hasNewItems) {
+              // Update Firestore with merged config
+              await setDoc(settingsRef, { menus: mergedMenus });
+            }
+            
+            setMenus(mergedMenus);
           } else {
             // Initialize with defaults if empty
             await setDoc(settingsRef, { menus: DEFAULT_MENU_CONFIG });
@@ -176,6 +210,7 @@ export default function AdminSystem() {
       Store,
       Settings,
       Cog,
+      Home,
     };
     return IconMap[iconName] || LayoutDashboard;
   };

@@ -40,7 +40,19 @@ export const uploadImage = async (
     // Generate file name if not provided
     const timestamp = Date.now();
     const fileExtension = file.name.split('.').pop();
-    const finalFileName = fileName || `product_${timestamp}.${fileExtension}`;
+    // Use folder name in filename prefix for better organization
+    let folderPrefix = 'image';
+    if (folder === 'product_images') {
+      folderPrefix = 'product';
+    } else if (folder === 'homepage_banners') {
+      folderPrefix = 'banner';
+    } else {
+      // Extract folder name (last segment after /)
+      const folderName = folder.split('/').pop() || folder;
+      // Clean up the folder name for use as prefix (remove underscores, take first word)
+      folderPrefix = folderName.split('_')[0] || 'image';
+    }
+    const finalFileName = fileName || `${folderPrefix}_${timestamp}.${fileExtension}`;
     
     // Create storage reference
     const storageRef = ref(storage, `${folder}/${finalFileName}`);

@@ -7,6 +7,8 @@ import { useCart } from '@/components/providers/CartProvider';
 import { ShoppingCart, User, Menu, X, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/translate';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function Header() {
   const { user, firebaseUser, signOut } = useAuth();
@@ -14,7 +16,30 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isServiceMenuOpen, setIsServiceMenuOpen] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string>('');
   const serviceMenuRef = useRef<HTMLDivElement>(null);
+
+  // Load logo from Firestore
+  useEffect(() => {
+    const loadLogo = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'site'));
+        if (settingsDoc.exists()) {
+          const data = settingsDoc.data();
+          const url = data.logoUrl || '';
+          // Validate URL - only accept Firebase Storage URLs or valid HTTPS URLs
+          if (url && url.trim() !== '' && 
+              (url.startsWith('https://firebasestorage.googleapis.com/') || 
+               (url.startsWith('https://') && !url.includes('unsplash.com')))) {
+            setLogoUrl(url);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading logo:', error);
+      }
+    };
+    loadLogo();
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -49,11 +74,24 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">F</span>
-            </div>
-            <span className="text-xl font-bold text-gray-900">{t('FoodSupplier Pro')}</span>
+          <Link href="/" className="flex items-center">
+            {logoUrl ? (
+              <img 
+                src={logoUrl} 
+                alt="Logo" 
+                className="h-10 object-contain"
+                onError={(e) => {
+                  // If logo fails to load, hide it and show default
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  setLogoUrl('');
+                }}
+              />
+            ) : (
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-lg">F</span>
+              </div>
+            )}
           </Link>
 
           {/* Desktop Navigation */}
