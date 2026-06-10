@@ -1,20 +1,30 @@
 {
   "expo": {
-    "name": "FoodSupplier-Mobile",
-    "slug": "FoodSupplier-Mobile",
+    "name": "iFoodPulse",
+    "slug": "ifoodpulse",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ifoodpulse.ifoodpulse",
+      "buildNumber": "22",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "允許 iFoodPulse 存取您的相簿以上傳轉帳收據。Allow iFoodPulse to access your photo library to upload payment receipts.",
+        "NSPhotoLibraryAddUsageDescription": "允許 iFoodPulse 儲存收據圖片到您的相簿。Allow iFoodPulse to save receipt images to your photo library.",
+        "NSCameraUsageDescription": "允許 iFoodPulse 使用相機拍攝轉帳收據。Allow iFoodPulse to use the camera to take payment receipt photos."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,6 +32,15 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
-    }
+    },
+    "plugins": [
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b92234a8-43c9-4793-86a9-b39f45d4b8f0"
+      }
+    },
+    "owner": "johncsy"
   }
 }

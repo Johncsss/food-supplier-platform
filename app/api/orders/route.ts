@@ -9,16 +9,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const supplierId = searchParams.get('supplier');
     const companyName = searchParams.get('companyName');
+    const adminFlag = searchParams.get('admin');
     
     console.log('Fetching orders for supplier ID:', supplierId);
     console.log('Company name:', companyName);
-    
-    if (!supplierId) {
-      return NextResponse.json(
-        { error: 'Supplier ID is required' },
-        { status: 400 }
-      );
-    }
+    console.log('Admin flag:', adminFlag);
 
     // Helper function to enrich order items with product unit information
     const enrichOrderItems = async (items: any[]) => {
@@ -51,6 +46,167 @@ export async function GET(request: NextRequest) {
       
       return enrichedItems;
     };
+
+    const formatOrder = (doc: any) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.() || null,
+        updatedAt: data.updatedAt?.toDate?.() || null,
+        deliveryDate: data.deliveryDate?.toDate?.() || null,
+      } as any;
+    };
+
+    const userCache = new Map<string, any>();
+
+    const hasAddressData = (address: any) => {
+      if (!address || typeof address !== 'object') return false;
+      return Boolean(address.street || address.city || address.state || address.zipCode);
+    };
+
+    const fetchUserData = async (orderData: any) => {
+      const candidates: Array<{ key: string; fetch: () => Promise<any> }> = [];
+
+      if (orderData.userId) {
+        const key = `doc:${orderData.userId}`;
+        candidates.push({
+          key,
+          fetch: async () => {
+            const doc = await adminDb.collection('users').doc(orderData.userId).get();
+            return doc.exists ? { id: doc.id, ...doc.data() } : null;
+          },
+        });
+      }
+
+      if (orderData.firebaseUid) {
+        const key = `firebaseUid:${orderData.firebaseUid}`;
+        candidates.push({
+          key,
+          fetch: async () => {
+            const snapshot = await adminDb
+              .collection('users')
+              .where('firebaseUid', '==', orderData.firebaseUid)
+              .limit(1)
+              .get();
+            if (!snapshot.empty) {
+              const doc = snapshot.docs[0];
+              return { id: doc.id, ...doc.data() };
+            }
+            return null;
+          },
+        });
+      }
+
+      if (orderData.userEmail) {
+        const key = `email:${orderData.userEmail.toLowerCase()}`;
+        candidates.push({
+          key,
+          fetch: async () => {
+            const snapshot = await adminDb
+              .collection('users')
+              .where('email', '==', orderData.userEmail)
+              .limit(1)
+              .get();
+            if (!snapshot.empty) {
+              const doc = snapshot.docs[0];
+              return { id: doc.id, ...doc.data() };
+            }
+            return null;
+          },
+        });
+      }
+
+      for (const candidate of candidates) {
+        if (userCache.has(candidate.key)) {
+          const cached = userCache.get(candidate.key);
+          if (cached) {
+            return cached;
+          }
+        } else {
+          const data = await candidate.fetch();
+          userCache.set(candidate.key, data);
+          if (data) {
+            return data;
+          }
+        }
+      }
+
+      return null;
+    };
+
+    const enrichOrderWithUserData = async (order: any) => {
+      const userData = await fetchUserData(order);
+      if (userData) {
+        if (!order.restaurantName && (userData.restaurantName || userData.name)) {
+          order.restaurantName = userData.restaurantName || userData.name;
+        }
+        if (!hasAddressData(order.deliveryAddress) && userData.address) {
+          order.deliveryAddress = {
+            street: userData.address.street || '',
+            city: userData.address.city || '',
+            state: userData.address.state || '',
+            zipCode: userData.address.zipCode || '',
+          };
+        }
+      }
+      if (!order.deliveryAddress) {
+        order.deliveryAddress = {
+          street: '',
+          city: '',
+          state: '',
+          zipCode: '',
+        };
+      }
+      return order;
+    };
+
+    // Admin mode: fetch all orders without supplier filtering
+    if (adminFlag && adminFlag.toLowerCase() === 'true') {
+      console.log('Admin mode enabled, fetching all orders');
+
+      let ordersSnapshot;
+      try {
+        ordersSnapshot = await adminDb.collection('orders').orderBy('createdAt', 'desc').get();
+      } catch (error: any) {
+        console.log('OrderBy failed, trying without orderBy:', error.message);
+        ordersSnapshot = await adminDb.collection('orders').get();
+      }
+
+      let orders = ordersSnapshot.docs.map(formatOrder);
+      orders = await Promise.all(
+        orders.map(async (order) => {
+          const items = await enrichOrderItems(order.items || []);
+          const enrichedOrder = { ...order, items };
+          return enrichOrderWithUserData(enrichedOrder);
+        }),
+      );
+
+      // If createdAt missing or orderBy failed, sort manually
+      if (orders.length > 0) {
+        orders.sort((a: any, b: any) => {
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bTime - aTime;
+        });
+      }
+
+      console.log(`Admin fetched ${orders.length} total orders`);
+
+      return NextResponse.json({
+        success: true,
+        orders,
+        count: orders.length,
+        query: { admin: true },
+      });
+    }
+    
+    if (!supplierId) {
+      return NextResponse.json(
+        { success: false, error: 'Supplier ID is required' },
+        { status: 400 }
+      );
+    }
     
     // Use supplier ID as the primary identifier
     const supplier = supplierId;
@@ -132,10 +288,13 @@ export async function GET(request: NextRequest) {
     let orders = [...ordersWithSupplierField, ...additionalOrders];
 
     // Enrich all orders with product unit information
-    orders = await Promise.all(orders.map(async (order) => ({
-      ...order,
-      items: await enrichOrderItems(order.items || [])
-    })));
+      orders = await Promise.all(
+        orders.map(async (order) => {
+          const items = await enrichOrderItems(order.items || []);
+          const enrichedOrder = { ...order, items };
+          return enrichOrderWithUserData(enrichedOrder);
+        }),
+      );
 
     // If we couldn't sort in the query, sort in memory
     if (orders.length > 0 && !orders[0].createdAt) {
@@ -168,6 +327,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ 
+      success: true,
       orders,
       query: {
         supplier: supplier,
@@ -180,11 +340,57 @@ export async function GET(request: NextRequest) {
     console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
       { 
+        success: false,
         error: 'Failed to fetch orders', 
         details: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
       },
       { status: 500 }
+    );
+  }
+}
+
+// Update order status (used by Admin and Supplier panels)
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { orderId, status } = body || {};
+    const allowedStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+    if (!orderId || !status) {
+      return NextResponse.json(
+        { success: false, error: 'orderId and status are required' },
+        { status: 400 },
+      );
+    }
+
+    if (!allowedStatuses.includes(String(status))) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid status value' },
+        { status: 400 },
+      );
+    }
+
+    const orderRef = adminDb.collection('orders').doc(String(orderId));
+    const orderDoc = await orderRef.get();
+    if (!orderDoc.exists) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 },
+      );
+    }
+
+    await orderRef.update({
+      status: String(status),
+      updatedAt: new Date(),
+    });
+
+    return NextResponse.json({ success: true, orderId, status });
+  } catch (error: any) {
+    console.error('Error updating order status:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update order status', details: error?.message },
+      { status: 500 },
     );
   }
 }

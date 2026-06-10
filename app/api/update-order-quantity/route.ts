@@ -42,6 +42,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Only allow editing for specific units
+    const editableUnits = ['斤', '公斤', '磅'];
+    const itemUnit = items[itemIndex]?.unit || '';
+    if (!editableUnits.includes(itemUnit)) {
+      return NextResponse.json(
+        { error: `此單位(${itemUnit || '未知'})不可編輯` },
+        { status: 400 }
+      );
+    }
+
     // Update the quantity and total price for the item
     items[itemIndex].quantity = newQuantity;
     items[itemIndex].totalPrice = newQuantity * items[itemIndex].unitPrice;

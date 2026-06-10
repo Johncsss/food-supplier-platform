@@ -20,10 +20,12 @@ interface AuthContextType {
   isSalesTeam: boolean;
   isSupplier: boolean;
   userRole: string | null;
+  adminPermissions: User['permissions'] | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, userData: Partial<User>) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,10 +35,12 @@ const AuthContext = createContext<AuthContextType>({
   isSalesTeam: false,
   isSupplier: false,
   userRole: null,
+  adminPermissions: null,
   loading: true,
   signIn: async () => {},
   signUp: async () => {},
   signOut: async () => {},
+  refreshUser: async () => {},
 });
 
 export const useAuth = () => {
@@ -54,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isSalesTeam, setIsSalesTeam] = useState(false);
   const [isSupplier, setIsSupplier] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [adminPermissions, setAdminPermissions] = useState<User['permissions'] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const buildMinimalUser = (firebaseUid: string, email?: string): User => ({
@@ -64,10 +69,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     restaurantName: '',
     companyName: undefined,
     phone: '',
-    address: { street: '', city: '', state: '', zipCode: '' },
+    address: { street: '' },
     membershipStatus: 'inactive',
     membershipExpiry: null,
     memberPoints: 0,
+    pendingPoints: 0,
     checkoutPassword: undefined,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -155,6 +161,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         membershipStatus: 'inactive',
         membershipExpiry: new Date(),
         memberPoints: 0,
+        pendingPoints: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -167,6 +174,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const refreshUser = async () => {
+    if (!firebaseUser) return;
+    const freshUser = await fetchUserData(firebaseUser.uid);
+    if (freshUser) {
+      setUser(freshUser);
+      // Refresh admin permissions if user is admin
+      if (isAdmin) {
+        setAdminPermissions(freshUser.permissions || null);
+      }
+    }
+  };
+
   // Sign out
   const signOut = async () => {
     try {
@@ -176,6 +195,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsSalesTeam(false);
       setIsSupplier(false);
       setUserRole(null);
+      setAdminPermissions(null);
     } catch (error: any) {
       throw new Error(error.message);
     }
@@ -211,6 +231,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUserRole(role || null);
         setIsSalesTeam(role === 'salesTeam');
         setIsSupplier(role === 'supplier');
+        
+        // Load admin permissions from Firestore
+        if (hasAdminClaim || isTemporaryAdmin || role === 'admin') {
+          const permissions = userData?.permissions || null;
+          setAdminPermissions(permissions);
+          console.log('Admin permissions loaded:', permissions);
+        } else {
+          setAdminPermissions(null);
+        }
       } else {
         // User is signed out
         setUser(null);
@@ -218,6 +247,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsSalesTeam(false);
         setIsSupplier(false);
         setUserRole(null);
+        setAdminPermissions(null);
       }
       
       setLoading(false);
@@ -234,10 +264,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isSalesTeam,
       isSupplier,
       userRole,
+      adminPermissions,
       loading, 
       signIn, 
       signUp, 
-      signOut 
+      signOut,
+      refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

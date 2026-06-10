@@ -1,11 +1,17 @@
 // API Configuration for Mobile App
+// Next.js dev server (from `yarn dev` in project root) runs on port 3010.
+// - Simulator: localhost works (same machine as dev server).
+// - Real device: use your computer's LAN IP below.
+const DEV_SERVER_PORT = 3010;
+// Use localhost in dev so simulator and same-machine testing hit the dev server.
+// For testing on a physical device, change to your Mac's LAN IP e.g. 'http://192.168.31.161:3010'
+const DEV_BASE_URL = `http://localhost:${DEV_SERVER_PORT}`;
+
 export const API_CONFIG = {
   // Base URLs for different environments
-  // For development, you can change this to your local machine's IP address
-  // Example: 'http://192.168.1.100:3000' (replace with your actual IP)
-  BASE_URL: __DEV__ 
-    ? 'http://localhost:3000'  // Development - using localhost for development
-    : 'https://your-production-domain.com',  // Production - update this with your actual domain
+  BASE_URL: __DEV__
+    ? DEV_BASE_URL
+    : 'https://www.ifoodpulse.com',  // Production
   
   // API Endpoints
   ENDPOINTS: {
@@ -13,6 +19,7 @@ export const API_CONFIG = {
     TEST: '/api/test',
     ORDERS: '/api/orders',
     USER_CLAIMS: '/api/check-user-claims',
+    CREATE_COMPLAINT: '/api/create-complaint',
   },
   
   // Request timeout in milliseconds - increased for mobile networks

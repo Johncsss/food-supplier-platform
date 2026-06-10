@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 5.2.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "image": "macos-sequoia-15.5-xcode-26.0"
+      }
+    },
+    "production": {
+      "node": "20.19.4",
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "YARN_IGNORE_ENGINES": "true"
+      },
+      "ios": {
+        "simulator": false,
+        "image": "macos-sequoia-15.5-xcode-26.0"
+      }
+    }
+  },
+}
+

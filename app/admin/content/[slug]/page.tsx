@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { ImageUploader } from '@/components/ui/ImageUploader';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { getDefaultFooterAreas } from '@/lib/static-pages';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface CmsPageDoc {
@@ -14,6 +15,55 @@ interface CmsPageDoc {
   content?: string;
   areas?: any;
   updatedAt?: any;
+}
+
+function getDefaultAreasForSlug(slug: string) {
+  if (slug === 'homepage') {
+    return defaultHomepageAreas();
+  }
+  if (slug === 'about') {
+    return defaultAboutAreas();
+  }
+  if (slug === 'contact') {
+    return defaultContactAreas();
+  }
+  if (slug === 'pricing') {
+    return defaultPricingAreas();
+  }
+  if (slug === 'partners') {
+    return defaultPartnersAreas();
+  }
+  if (slug === 'faq') {
+    return defaultFaqAreas();
+  }
+  if (slug === 'restaurant-construction') {
+    return defaultRestaurantConstructionAreas();
+  }
+  if (slug === 'restaurant-furniture') {
+    return defaultRestaurantFurnitureAreas();
+  }
+  if (slug === 'kitchen-equipment') {
+    return defaultKitchenEquipmentAreas();
+  }
+  if (slug === 'dishes-tableware') {
+    return defaultDishesTablewareAreas();
+  }
+  if (slug === 'promotion') {
+    return defaultPromotionAreas();
+  }
+  if (slug === 'restaurant-maintenance') {
+    return defaultRestaurantMaintenanceAreas();
+  }
+  if (slug === 'restaurant-systems') {
+    return defaultRestaurantSystemsAreas();
+  }
+  if (slug === 'mobile-app') {
+    return defaultMobileAppAreas();
+  }
+  if (slug === 'footer') {
+    return defaultFooterAreas();
+  }
+  return undefined;
 }
 
 export default function AdminContentEditPage() {
@@ -30,6 +80,18 @@ export default function AdminContentEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const uploadingCountRef = useRef(0);
+
+  const handleUploadingChange = (uploading: boolean) => {
+    if (uploading) {
+      uploadingCountRef.current += 1;
+    } else {
+      uploadingCountRef.current = Math.max(0, uploadingCountRef.current - 1);
+    }
+    setIsUploading(uploadingCountRef.current > 0);
+  };
+
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     hero: false,
     features: false,
@@ -61,17 +123,26 @@ export default function AdminContentEditPage() {
     partnersTypes: false,
     partnersRequirements: false,
     partnersCta: false,
+    faqHero: false,
+    faqQuestions: false,
     mobileBanners: false,
     mobilePromotionalBanners: false,
     mobileLongBanners: false,
+    mobileCartBanner: false,
+    mobileOrdersBanner: false,
+    mobilePaymentMethods: false,
     mobileSquareBanners: false,
     mobilePopupBanner: false,
     mobileLogo: false,
     mobileCategories: false,
+    footerCompany: false,
+    footerQuickLinks: false,
+    footerContact: false,
+    footerBottom: false,
   });
 
   const pageRef = useMemo(() => doc(db, 'pages', slug), [slug]);
-  const updateArea = (path: string[], value: any) => {
+  const updateArea = (path: (string | number)[], value: any) => {
     setAreas((prev: any) => updateNested(prev, path, value));
   };
 
@@ -81,22 +152,8 @@ export default function AdminContentEditPage() {
         setError(null);
         setLoading(true);
         const snap = await getDoc(pageRef);
+        const defaultAreas = getDefaultAreasForSlug(slug);
         if (!snap.exists()) {
-          // Initialize if missing
-          let defaultAreas: any = undefined;
-          if (slug === 'homepage') {
-            defaultAreas = defaultHomepageAreas();
-          } else if (slug === 'about') {
-            defaultAreas = defaultAboutAreas();
-          } else if (slug === 'contact') {
-            defaultAreas = defaultContactAreas();
-          } else if (slug === 'pricing') {
-            defaultAreas = defaultPricingAreas();
-          } else if (slug === 'partners') {
-            defaultAreas = defaultPartnersAreas();
-          } else if (slug === 'mobile-app') {
-            defaultAreas = defaultMobileAppAreas();
-          }
           const init: CmsPageDoc = { title: slug, slug, content: '', areas: defaultAreas };
           setData(init);
           setTitle(init.title);
@@ -104,20 +161,6 @@ export default function AdminContentEditPage() {
           setAreas(init.areas || null);
         } else {
           const d = snap.data() as any;
-          let defaultAreas: any = undefined;
-          if (slug === 'homepage') {
-            defaultAreas = defaultHomepageAreas();
-          } else if (slug === 'about') {
-            defaultAreas = defaultAboutAreas();
-          } else if (slug === 'contact') {
-            defaultAreas = defaultContactAreas();
-          } else if (slug === 'pricing') {
-            defaultAreas = defaultPricingAreas();
-          } else if (slug === 'partners') {
-            defaultAreas = defaultPartnersAreas();
-          } else if (slug === 'mobile-app') {
-            defaultAreas = defaultMobileAppAreas();
-          }
           const page: CmsPageDoc = {
             title: d.title || slug,
             slug: d.slug || slug,
@@ -128,7 +171,12 @@ export default function AdminContentEditPage() {
           setData(page);
           setTitle(page.title);
           setContent(page.content || '');
-          setAreas(page.areas || defaultAreas || null);
+          // Ensure paymentMethods is initialized for mobile-app
+          const areasToSet = page.areas || defaultAreas;
+          if (slug === 'mobile-app' && (!areasToSet?.paymentMethods || !Array.isArray(areasToSet.paymentMethods))) {
+            areasToSet.paymentMethods = [];
+          }
+          setAreas(areasToSet || null);
         }
       } catch (e: any) {
         setError(e?.message || '載入失敗');
@@ -143,14 +191,24 @@ export default function AdminContentEditPage() {
     try {
       setError(null);
       setSaving(true);
+      const defaultAreas = getDefaultAreasForSlug(slug);
       await setDoc(pageRef, {
         title: title || slug,
         slug,
         content,
-        areas: slug === 'homepage' ? (areas || defaultHomepageAreas()) : slug === 'about' ? (areas || defaultAboutAreas()) : slug === 'contact' ? (areas || defaultContactAreas()) : slug === 'pricing' ? (areas || defaultPricingAreas()) : slug === 'partners' ? (areas || defaultPartnersAreas()) : slug === 'mobile-app' ? (areas || defaultMobileAppAreas()) : undefined,
+        areas: defaultAreas ? (areas || defaultAreas) : undefined,
         updatedAt: Timestamp.now(),
       }, { merge: true });
       setSaved(true);
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('cms-updates');
+          bc.postMessage({ type: 'pageSaved', slug });
+          bc.close();
+        }
+      } catch {
+        // ignore broadcast failures
+      }
       setTimeout(() => setSaved(false), 1500);
     } catch (e: any) {
       setError(e?.message || '儲存失敗');
@@ -170,10 +228,10 @@ export default function AdminContentEditPage() {
           <Link href="/admin/content" className="px-3 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200">返回</Link>
           <button
             onClick={save}
-            disabled={saving}
-            className={`px-4 py-2 text-sm rounded-lg text-white ${saving ? 'bg-gray-400' : 'bg-primary-600 hover:bg-primary-700'}`}
+            disabled={saving || isUploading}
+            className={`px-4 py-2 text-sm rounded-lg text-white ${saving || isUploading ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}
           >
-            {saving ? '儲存中...' : saved ? '已儲存' : '儲存'}
+            {isUploading ? '上傳中...' : saving ? '儲存中...' : saved ? '已儲存' : '儲存'}
           </button>
         </div>
       </div>
@@ -221,15 +279,16 @@ export default function AdminContentEditPage() {
                       onChange={(url) => updateArea(['hero','bannerImageUrl'], url)}
                       className="w-full"
                       folder="homepage_banners"
+                      onUploadingChange={handleUploadingChange}
                     />
                     <p className="mt-1 text-xs text-gray-500">建議尺寸: 1920x600px 或更高解析度</p>
                   </div>
                   <TextField label="主標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="為餐廳提供優質食品供應" />
                   <TextField label="主標題強調文字 (span)" value={areas?.hero?.titleSpan || ''} onChange={(v) => updateArea(['hero','titleSpan'], v)} placeholder="餐廳" />
-                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="透過我們的年度會員計劃，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。" />
+                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="透過iFoodPulse，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。" />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <TextField label="按鈕 1 文字" value={areas?.hero?.button1Text || ''} onChange={(v) => updateArea(['hero','button1Text'], v)} placeholder="開始您的會員資格" />
-                    <TextField label="按鈕 1 連結" value={areas?.hero?.button1Link || ''} onChange={(v) => updateArea(['hero','button1Link'], v)} placeholder="/register" />
+                    <TextField label="按鈕 1 連結" value={areas?.hero?.button1Link || ''} onChange={(v) => updateArea(['hero','button1Link'], v)} placeholder="/partners/apply" />
                     <TextField label="按鈕 2 文字" value={areas?.hero?.button2Text || ''} onChange={(v) => updateArea(['hero','button2Text'], v)} placeholder="瀏覽產品" />
                     <TextField label="按鈕 2 連結" value={areas?.hero?.button2Link || ''} onChange={(v) => updateArea(['hero','button2Link'], v)} placeholder="/products" />
                   </div>
@@ -325,7 +384,7 @@ export default function AdminContentEditPage() {
                   <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="今天就加入我們的會員計劃，開始享受優質食品供應服務。" />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <TextField label="按鈕 1 文字" value={areas?.cta?.button1Text || ''} onChange={(v) => updateArea(['cta','button1Text'], v)} placeholder="開始免費試用" />
-                    <TextField label="按鈕 1 連結" value={areas?.cta?.button1Link || ''} onChange={(v) => updateArea(['cta','button1Link'], v)} placeholder="/register" />
+                    <TextField label="按鈕 1 連結" value={areas?.cta?.button1Link || ''} onChange={(v) => updateArea(['cta','button1Link'], v)} placeholder="/partners/apply" />
                     <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="查看價格" />
                     <TextField label="按鈕 2 連結" value={areas?.cta?.button2Link || ''} onChange={(v) => updateArea(['cta','button2Link'], v)} placeholder="/pricing" />
                   </div>
@@ -525,7 +584,7 @@ export default function AdminContentEditPage() {
                   <TextField label="標題" value={areas?.cta?.title || ''} onChange={(v) => updateArea(['cta','title'], v)} placeholder="準備好開始合作了嗎？" />
                   <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="加入我們的客戶網絡，享受專業的食材供應服務" />
                   <TextField label="按鈕 1 文字" value={areas?.cta?.button1Text || ''} onChange={(v) => updateArea(['cta','button1Text'], v)} placeholder="立即註冊" />
-                  <TextField label="按鈕 1 連結" value={areas?.cta?.button1Link || ''} onChange={(v) => updateArea(['cta','button1Link'], v)} placeholder="/register" />
+                  <TextField label="按鈕 1 連結" value={areas?.cta?.button1Link || ''} onChange={(v) => updateArea(['cta','button1Link'], v)} placeholder="/partners/apply" />
                   <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="聯絡我們" />
                   <TextField label="按鈕 2 連結" value={areas?.cta?.button2Link || ''} onChange={(v) => updateArea(['cta','button2Link'], v)} placeholder="/contact" />
                 </div>
@@ -680,68 +739,68 @@ export default function AdminContentEditPage() {
                 onToggle={() => setExpandedSections(prev => ({ ...prev, pricingHero: !prev.pricingHero }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="選擇您的會員方案" />
-                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="加入數千個信任食品供應商專業版進行食品供應需求的餐廳。所有方案均包含年度計費，無隱藏費用。" />
+                  <TextField label="標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="會員點數方案" />
+                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="透過購買會員點數，快速補充貨品採購所需的預付餘額。每一點會員點數等同港幣，可在平台上立即使用。" />
                 </div>
               </SectionCard>
 
               <SectionCard 
-                title="方案卡片" 
+                title="點數方案卡片" 
                 isExpanded={expandedSections.pricingPlans}
                 onToggle={() => setExpandedSections(prev => ({ ...prev, pricingPlans: !prev.pricingPlans }))}
               >
                 <div className="space-y-6">
                   <div className="p-4 bg-gray-50 rounded-lg border">
-                    <h5 className="text-sm font-medium mb-3">方案 1: 基本方案</h5>
-                    <TextField label="方案名稱" value={areas?.plans?.plan1?.name || ''} onChange={(v) => updateArea(['plans','plan1','name'], v)} placeholder="基本方案" />
-                    <TextField label="描述" value={areas?.plans?.plan1?.description || ''} onChange={(v) => updateArea(['plans','plan1','description'], v)} placeholder="適合小型餐廳" />
+                    <h5 className="text-sm font-medium mb-3">方案 1: HK$500 方案</h5>
+                    <TextField label="方案名稱" value={areas?.plans?.plan1?.name || ''} onChange={(v) => updateArea(['plans','plan1','name'], v)} placeholder="HK$500 方案" />
+                    <TextField label="描述" value={areas?.plans?.plan1?.description || ''} onChange={(v) => updateArea(['plans','plan1','description'], v)} placeholder="適合首次補貨或測試平台使用" />
                     <div className="grid grid-cols-2 gap-4 mt-2">
-                      <TextField label="價格" value={areas?.plans?.plan1?.price || ''} onChange={(v) => updateArea(['plans','plan1','price'], v)} placeholder="999" />
-                      <TextField label="原價" value={areas?.plans?.plan1?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan1','originalPrice'], v)} placeholder="1299" />
+                      <TextField label="點數 / 金額" value={areas?.plans?.plan1?.price || ''} onChange={(v) => updateArea(['plans','plan1','price'], v)} placeholder="500" />
+                      <TextField label="適用情境" value={areas?.plans?.plan1?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan1','originalPrice'], v)} placeholder="適合首次補貨" />
                     </div>
                     <div className="mt-3">
-                      <label className="block mb-2 text-sm text-gray-600">功能列表 (每行一項)</label>
+                      <label className="block mb-2 text-sm text-gray-600">亮點 (每行一項)</label>
                       <textarea
                         value={(areas?.plans?.plan1?.features || []).join('\n')}
                         onChange={(e) => updateArea(['plans','plan1','features'], e.target.value.split('\n').filter(f => f.trim()))}
                         className="w-full rounded-md border px-3 py-2 min-h-[150px]"
-                        placeholder="存取所有產品&#10;標準配送 (48-72小時)&#10;電子郵件支援&#10;訂單追蹤&#10;基本分析&#10;每月最多50筆訂單"
+                        placeholder="一次購買 500 點會員點數&#10;點數審核通過即時入帳&#10;支援平台內所有品項"
                       />
                     </div>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
-                    <h5 className="text-sm font-medium mb-3">方案 2: 專業方案</h5>
-                    <TextField label="方案名稱" value={areas?.plans?.plan2?.name || ''} onChange={(v) => updateArea(['plans','plan2','name'], v)} placeholder="專業方案" />
-                    <TextField label="描述" value={areas?.plans?.plan2?.description || ''} onChange={(v) => updateArea(['plans','plan2','description'], v)} placeholder="適合成長中的餐廳" />
+                    <h5 className="text-sm font-medium mb-3">方案 2: HK$1,000 方案</h5>
+                    <TextField label="方案名稱" value={areas?.plans?.plan2?.name || ''} onChange={(v) => updateArea(['plans','plan2','name'], v)} placeholder="HK$1,000 方案" />
+                    <TextField label="描述" value={areas?.plans?.plan2?.description || ''} onChange={(v) => updateArea(['plans','plan2','description'], v)} placeholder="適合穩定每週補貨的餐廳" />
                     <div className="grid grid-cols-2 gap-4 mt-2">
-                      <TextField label="價格" value={areas?.plans?.plan2?.price || ''} onChange={(v) => updateArea(['plans','plan2','price'], v)} placeholder="1999" />
-                      <TextField label="原價" value={areas?.plans?.plan2?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan2','originalPrice'], v)} placeholder="2499" />
+                      <TextField label="點數 / 金額" value={areas?.plans?.plan2?.price || ''} onChange={(v) => updateArea(['plans','plan2','price'], v)} placeholder="1000" />
+                      <TextField label="適用情境" value={areas?.plans?.plan2?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan2','originalPrice'], v)} placeholder="適合每週例行採購" />
                     </div>
                     <div className="mt-3">
-                      <label className="block mb-2 text-sm text-gray-600">功能列表 (每行一項)</label>
+                      <label className="block mb-2 text-sm text-gray-600">亮點 (每行一項)</label>
                       <textarea
                         value={(areas?.plans?.plan2?.features || []).join('\n')}
                         onChange={(e) => updateArea(['plans','plan2','features'], e.target.value.split('\n').filter(f => f.trim()))}
                         className="w-full rounded-md border px-3 py-2 min-h-[150px]"
-                        placeholder="包含基本方案所有功能&#10;優先配送 (24-48小時)&#10;電話和電子郵件支援&#10;進階分析&#10;無限制訂單&#10;大量訂購折扣&#10;自訂配送排程&#10;專屬客戶經理"
+                        placeholder="建議每週例行採購的預算&#10;支援多筆訂單與分店使用&#10;享有點數回饋與專人支援"
                       />
                     </div>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
-                    <h5 className="text-sm font-medium mb-3">方案 3: 高級方案</h5>
-                    <TextField label="方案名稱" value={areas?.plans?.plan3?.name || ''} onChange={(v) => updateArea(['plans','plan3','name'], v)} placeholder="高級方案" />
-                    <TextField label="描述" value={areas?.plans?.plan3?.description || ''} onChange={(v) => updateArea(['plans','plan3','description'], v)} placeholder="適合大型餐廳連鎖" />
+                    <h5 className="text-sm font-medium mb-3">方案 3: HK$3,000 方案</h5>
+                    <TextField label="方案名稱" value={areas?.plans?.plan3?.name || ''} onChange={(v) => updateArea(['plans','plan3','name'], v)} placeholder="HK$3,000 方案" />
+                    <TextField label="描述" value={areas?.plans?.plan3?.description || ''} onChange={(v) => updateArea(['plans','plan3','description'], v)} placeholder="適合集中採購或多分店營運" />
                     <div className="grid grid-cols-2 gap-4 mt-2">
-                      <TextField label="價格" value={areas?.plans?.plan3?.price || ''} onChange={(v) => updateArea(['plans','plan3','price'], v)} placeholder="3999" />
-                      <TextField label="原價" value={areas?.plans?.plan3?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan3','originalPrice'], v)} placeholder="4999" />
+                      <TextField label="點數 / 金額" value={areas?.plans?.plan3?.price || ''} onChange={(v) => updateArea(['plans','plan3','price'], v)} placeholder="3000" />
+                      <TextField label="適用情境" value={areas?.plans?.plan3?.originalPrice || ''} onChange={(v) => updateArea(['plans','plan3','originalPrice'], v)} placeholder="支援多分店共同使用" />
                     </div>
                     <div className="mt-3">
-                      <label className="block mb-2 text-sm text-gray-600">功能列表 (每行一項)</label>
+                      <label className="block mb-2 text-sm text-gray-600">亮點 (每行一項)</label>
                       <textarea
                         value={(areas?.plans?.plan3?.features || []).join('\n')}
                         onChange={(e) => updateArea(['plans','plan3','features'], e.target.value.split('\n').filter(f => f.trim()))}
                         className="w-full rounded-md border px-3 py-2 min-h-[150px]"
-                        placeholder="包含專業方案所有功能&#10;當日配送服務&#10;24/7優先支援&#10;客製化產品採購&#10;進階庫存管理&#10;多據點支援&#10;白標訂購系統&#10;API存取&#10;客製化整合"
+                        placeholder="一次補充大量採購額度&#10;點數餘額可隨時查詢與共享&#10;專員協助採購與物流安排"
                       />
                     </div>
                   </div>
@@ -756,23 +815,23 @@ export default function AdminContentEditPage() {
                 <div className="space-y-4">
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">問題 1</h5>
-                    <TextField label="問題" value={areas?.faq?.q1?.question || ''} onChange={(v) => updateArea(['faq','q1','question'], v)} placeholder="我可以取消我的會員資格嗎？" />
-                    <TextArea label="答案" value={areas?.faq?.q1?.answer || ''} onChange={(v) => updateArea(['faq','q1','answer'], v)} placeholder="是的，您可以隨時取消您的會員資格。您的存取權限將持續到當前計費期結束。" />
+                    <TextField label="問題" value={areas?.faq?.q1?.question || ''} onChange={(v) => updateArea(['faq','q1','question'], v)} placeholder="點數如何購買與使用？" />
+                    <TextArea label="答案" value={areas?.faq?.q1?.answer || ''} onChange={(v) => updateArea(['faq','q1','answer'], v)} placeholder="登入帳戶後前往「購買點數」，選擇方案並匯款，上傳收據後待審核通過，點數即會入帳供下單使用。" />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">問題 2</h5>
-                    <TextField label="問題" value={areas?.faq?.q2?.question || ''} onChange={(v) => updateArea(['faq','q2','question'], v)} placeholder="有免費試用嗎？" />
-                    <TextArea label="答案" value={areas?.faq?.q2?.answer || ''} onChange={(v) => updateArea(['faq','q2','answer'], v)} placeholder="我們為所有新會員提供14天免費試用。開始試用無需信用卡。" />
+                    <TextField label="問題" value={areas?.faq?.q2?.question || ''} onChange={(v) => updateArea(['faq','q2','question'], v)} placeholder="點數可以共享或轉移嗎？" />
+                    <TextArea label="答案" value={areas?.faq?.q2?.answer || ''} onChange={(v) => updateArea(['faq','q2','answer'], v)} placeholder="同一公司底下的授權帳號都可以共用點數餘額，方便管理採購預算與分店需求。" />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">問題 3</h5>
-                    <TextField label="問題" value={areas?.faq?.q3?.question || ''} onChange={(v) => updateArea(['faq','q3','question'], v)} placeholder="您接受哪些付款方式？" />
-                    <TextArea label="答案" value={areas?.faq?.q3?.answer || ''} onChange={(v) => updateArea(['faq','q3','answer'], v)} placeholder="我們接受所有主要信用卡、金融卡和銀行轉帳。所有付款都通過Stripe安全處理。" />
+                    <TextField label="問題" value={areas?.faq?.q3?.question || ''} onChange={(v) => updateArea(['faq','q3','question'], v)} placeholder="審核需要多久時間？" />
+                    <TextArea label="答案" value={areas?.faq?.q3?.answer || ''} onChange={(v) => updateArea(['faq','q3','answer'], v)} placeholder="我們的專員會在收到收據後 1-2 個工作日內完成審核並啟用點數。" />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">問題 4</h5>
-                    <TextField label="問題" value={areas?.faq?.q4?.question || ''} onChange={(v) => updateArea(['faq','q4','question'], v)} placeholder="我可以升級或降級我的方案嗎？" />
-                    <TextArea label="答案" value={areas?.faq?.q4?.answer || ''} onChange={(v) => updateArea(['faq','q4','answer'], v)} placeholder="是的，您可以隨時升級或降級您的方案。變更將根據您當前的計費週期按比例計算。" />
+                    <TextField label="問題" value={areas?.faq?.q4?.question || ''} onChange={(v) => updateArea(['faq','q4','question'], v)} placeholder="未使用的點數會過期嗎？" />
+                    <TextArea label="答案" value={areas?.faq?.q4?.answer || ''} onChange={(v) => updateArea(['faq','q4','answer'], v)} placeholder="會員點數不會過期，可在需要時隨時使用。如需退款，請聯絡客戶服務團隊。" />
                   </div>
                 </div>
               </SectionCard>
@@ -783,11 +842,11 @@ export default function AdminContentEditPage() {
                 onToggle={() => setExpandedSections(prev => ({ ...prev, pricingCta: !prev.pricingCta }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="標題" value={areas?.cta?.title || ''} onChange={(v) => updateArea(['cta','title'], v)} placeholder="準備開始了嗎？" />
-                  <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="加入數千個信任食品供應商專業版的餐廳" />
-                  <TextField label="按鈕 1 文字" value={areas?.cta?.button1Text || ''} onChange={(v) => updateArea(['cta','button1Text'], v)} placeholder="開始免費試用" />
-                  <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="聯繫銷售" />
-                  <TextField label="按鈕 2 連結" value={areas?.cta?.button2Link || ''} onChange={(v) => updateArea(['cta','button2Link'], v)} placeholder="/contact" />
+                  <TextField label="標題" value={areas?.cta?.title || ''} onChange={(v) => updateArea(['cta','title'], v)} placeholder="準備好補充會員點數了嗎？" />
+                  <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="登入會員即可在「購買點數」頁面提交收據，快速完成點數儲值並開始採購。" />
+                  <TextField label="按鈕 1 文字" value={areas?.cta?.button1Text || ''} onChange={(v) => updateArea(['cta','button1Text'], v)} placeholder="前往購買點數" />
+                  <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="了解使用流程" />
+                  <TextField label="按鈕 2 連結" value={areas?.cta?.button2Link || ''} onChange={(v) => updateArea(['cta','button2Link'], v)} placeholder="/partners/apply" />
                 </div>
               </SectionCard>
             </div>
@@ -799,11 +858,11 @@ export default function AdminContentEditPage() {
                 onToggle={() => setExpandedSections(prev => ({ ...prev, partnersHero: !prev.partnersHero }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="成為我們的合作夥伴" />
-                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="與高質食品供應商攜手合作，共同打造香港最優質的餐廳食品供應平台" />
+                  <TextField label="標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="餐廳食材採購，一站式完成" />
+                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="iFoodPulse 食材採購平台，讓餐廳主管與主廚可以在數分鐘內完成補貨、掌握成本，並獲得專人支援與點數回饋。" />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <TextField label="按鈕 1 文字" value={areas?.hero?.button1Text || ''} onChange={(v) => updateArea(['hero','button1Text'], v)} placeholder="立即申請合作" />
-                    <TextField label="按鈕 2 文字" value={areas?.hero?.button2Text || ''} onChange={(v) => updateArea(['hero','button2Text'], v)} placeholder="了解更多" />
+                    <TextField label="按鈕 2 文字" value={areas?.hero?.button2Text || ''} onChange={(v) => updateArea(['hero','button2Text'], v)} placeholder="了解平台優勢" />
                   </div>
                 </div>
               </SectionCard>
@@ -814,67 +873,67 @@ export default function AdminContentEditPage() {
                 onToggle={() => setExpandedSections(prev => ({ ...prev, partnersBenefits: !prev.partnersBenefits }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="區塊標題" value={areas?.benefits?.title || ''} onChange={(v) => updateArea(['benefits','title'], v)} placeholder="合作優勢" />
-                  <TextArea label="區塊描述" value={areas?.benefits?.description || ''} onChange={(v) => updateArea(['benefits','description'], v)} placeholder="加入我們的合作夥伴網絡，享受專業支援和業務增長機會" />
+                  <TextField label="區塊標題" value={areas?.benefits?.title || ''} onChange={(v) => updateArea(['benefits','title'], v)} placeholder="餐廳專屬採購優勢" />
+                  <TextArea label="區塊描述" value={areas?.benefits?.description || ''} onChange={(v) => updateArea(['benefits','description'], v)} placeholder="我們整合熱門食材、耗材與飲品供應商，並透過點數結帳與補貨提醒，協助餐廳團隊減少溝通成本、專注料理品質。" />
                   <div className="space-y-4 mt-4">
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">優勢 1: 業務增長</h5>
-                      <TextField label="標題" value={areas?.benefits?.benefit1?.title || ''} onChange={(v) => updateArea(['benefits','benefit1','title'], v)} placeholder="業務增長" />
-                      <TextArea label="描述" value={areas?.benefits?.benefit1?.description || ''} onChange={(v) => updateArea(['benefits','benefit1','description'], v)} placeholder="透過我們的平台擴大您的業務範圍，接觸更多餐廳客戶" />
+                      <h5 className="text-sm font-medium mb-3">優勢 1</h5>
+                      <TextField label="標題" value={areas?.benefits?.benefit1?.title || ''} onChange={(v) => updateArea(['benefits','benefit1','title'], v)} placeholder="一鍵補貨，節省時間" />
+                      <TextArea label="描述" value={areas?.benefits?.benefit1?.description || ''} onChange={(v) => updateArea(['benefits','benefit1','description'], v)} placeholder="集中管理常用食材清單，快速加入購物車即可完成補貨，免去逐一聯絡供應商的麻煩。" />
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">優勢 2: 信譽保障</h5>
-                      <TextField label="標題" value={areas?.benefits?.benefit2?.title || ''} onChange={(v) => updateArea(['benefits','benefit2','title'], v)} placeholder="信譽保障" />
-                      <TextArea label="描述" value={areas?.benefits?.benefit2?.description || ''} onChange={(v) => updateArea(['benefits','benefit2','description'], v)} placeholder="與知名食品供應商合作，提升您的品牌信譽和市場地位" />
+                      <h5 className="text-sm font-medium mb-3">優勢 2</h5>
+                      <TextField label="標題" value={areas?.benefits?.benefit2?.title || ''} onChange={(v) => updateArea(['benefits','benefit2','title'], v)} placeholder="透明價格與點數結帳" />
+                      <TextArea label="描述" value={areas?.benefits?.benefit2?.description || ''} onChange={(v) => updateArea(['benefits','benefit2','description'], v)} placeholder="平台提供即時價格與點數結帳功能，協助餐廳掌握採購預算並享受回饋方案。" />
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">優勢 3: 市場擴展</h5>
-                      <TextField label="標題" value={areas?.benefits?.benefit3?.title || ''} onChange={(v) => updateArea(['benefits','benefit3','title'], v)} placeholder="市場擴展" />
-                      <TextArea label="描述" value={areas?.benefits?.benefit3?.description || ''} onChange={(v) => updateArea(['benefits','benefit3','description'], v)} placeholder="進入香港及周邊地區的餐廳市場，擴大您的業務版圖" />
+                      <h5 className="text-sm font-medium mb-3">優勢 3</h5>
+                      <TextField label="標題" value={areas?.benefits?.benefit3?.title || ''} onChange={(v) => updateArea(['benefits','benefit3','title'], v)} placeholder="多品類食材一次搞定" />
+                      <TextArea label="描述" value={areas?.benefits?.benefit3?.description || ''} onChange={(v) => updateArea(['benefits','benefit3','description'], v)} placeholder="從新鮮食材、乾貨到調味配料，餐廳可以在同一平台完成採購，降低庫存壓力。" />
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">優勢 4: 專業支援</h5>
-                      <TextField label="標題" value={areas?.benefits?.benefit4?.title || ''} onChange={(v) => updateArea(['benefits','benefit4','title'], v)} placeholder="專業支援" />
-                      <TextArea label="描述" value={areas?.benefits?.benefit4?.description || ''} onChange={(v) => updateArea(['benefits','benefit4','description'], v)} placeholder="獲得專業的業務支援和技術指導，確保合作順利進行" />
+                      <h5 className="text-sm font-medium mb-3">優勢 4</h5>
+                      <TextField label="標題" value={areas?.benefits?.benefit4?.title || ''} onChange={(v) => updateArea(['benefits','benefit4','title'], v)} placeholder="營運數據與提醒" />
+                      <TextArea label="描述" value={areas?.benefits?.benefit4?.description || ''} onChange={(v) => updateArea(['benefits','benefit4','description'], v)} placeholder="系統提供採購紀錄、常用品項提醒與即將缺貨通知，協助廚房穩定運作。" />
                     </div>
                   </div>
                 </div>
               </SectionCard>
 
               <SectionCard 
-                title="合作類型" 
+                title="採購體驗特色" 
                 isExpanded={expandedSections.partnersTypes}
                 onToggle={() => setExpandedSections(prev => ({ ...prev, partnersTypes: !prev.partnersTypes }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="區塊標題" value={areas?.partnershipTypes?.title || ''} onChange={(v) => updateArea(['partnershipTypes','title'], v)} placeholder="合作類型" />
-                  <TextArea label="區塊描述" value={areas?.partnershipTypes?.description || ''} onChange={(v) => updateArea(['partnershipTypes','description'], v)} placeholder="我們提供多種合作模式，滿足不同類型的合作夥伴需求" />
+                  <TextField label="區塊標題" value={areas?.partnershipTypes?.title || ''} onChange={(v) => updateArea(['partnershipTypes','title'], v)} placeholder="量身打造的採購體驗" />
+                  <TextArea label="區塊描述" value={areas?.partnershipTypes?.description || ''} onChange={(v) => updateArea(['partnershipTypes','description'], v)} placeholder="登入後即可查看常用食材與採購提醒，流程清楚快速，支援多分店協作與權限管理。" />
                   <div className="space-y-4 mt-4">
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">類型 1: 供應商合作</h5>
-                      <TextField label="標題" value={areas?.partnershipTypes?.type1?.title || ''} onChange={(v) => updateArea(['partnershipTypes','type1','title'], v)} placeholder="供應商合作" />
-                      <TextArea label="描述" value={areas?.partnershipTypes?.type1?.description || ''} onChange={(v) => updateArea(['partnershipTypes','type1','description'], v)} placeholder="成為我們的優質供應商，為餐廳提供新鮮優質的食材" />
+                      <h5 className="text-sm font-medium mb-3">重點 1</h5>
+                      <TextField label="標題" value={areas?.partnershipTypes?.type1?.title || ''} onChange={(v) => updateArea(['partnershipTypes','type1','title'], v)} placeholder="個人化主頁" />
+                      <TextArea label="描述" value={areas?.partnershipTypes?.type1?.description || ''} onChange={(v) => updateArea(['partnershipTypes','type1','description'], v)} placeholder="登入後立即看到餐廳常用食材與優惠資訊，支援多分店切換與快速補貨。" />
                       <div className="mt-3">
-                        <label className="block mb-2 text-sm text-gray-600">功能列表 (每行一項)</label>
+                        <label className="block mb-2 text-sm text-gray-600">重點列表 (每行一項)</label>
                         <textarea
                           value={(areas?.partnershipTypes?.type1?.features || []).join('\n')}
                           onChange={(e) => updateArea(['partnershipTypes','type1','features'], e.target.value.split('\n').filter(f => f.trim()))}
                           className="w-full rounded-md border px-3 py-2 min-h-[100px]"
-                          placeholder="產品展示&#10;訂單管理&#10;物流支援&#10;品質保證"
+                          placeholder="常用品項即時顯示&#10;依菜單推薦採購項目&#10;支援多店面切換"
                         />
                       </div>
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg border">
-                      <h5 className="text-sm font-medium mb-3">類型 2: 配送夥伴</h5>
-                      <TextField label="標題" value={areas?.partnershipTypes?.type2?.title || ''} onChange={(v) => updateArea(['partnershipTypes','type2','title'], v)} placeholder="配送夥伴" />
-                      <TextArea label="描述" value={areas?.partnershipTypes?.type2?.description || ''} onChange={(v) => updateArea(['partnershipTypes','type2','description'], v)} placeholder="加入我們的配送網絡，為餐廳提供快速可靠的配送服務" />
+                      <h5 className="text-sm font-medium mb-3">重點 2</h5>
+                      <TextField label="標題" value={areas?.partnershipTypes?.type2?.title || ''} onChange={(v) => updateArea(['partnershipTypes','type2','title'], v)} placeholder="直覺式下單流程" />
+                      <TextArea label="描述" value={areas?.partnershipTypes?.type2?.description || ''} onChange={(v) => updateArea(['partnershipTypes','type2','description'], v)} placeholder="快速搜尋品項、瀏覽圖片與規格說明，系統自動計算點數與金額，三分鐘內完成結帳。" />
                       <div className="mt-3">
-                        <label className="block mb-2 text-sm text-gray-600">功能列表 (每行一項)</label>
+                        <label className="block mb-2 text-sm text-gray-600">重點列表 (每行一項)</label>
                         <textarea
                           value={(areas?.partnershipTypes?.type2?.features || []).join('\n')}
                           onChange={(e) => updateArea(['partnershipTypes','type2','features'], e.target.value.split('\n').filter(f => f.trim()))}
                           className="w-full rounded-md border px-3 py-2 min-h-[100px]"
-                          placeholder="配送管理&#10;路線優化&#10;即時追蹤&#10;客戶服務"
+                          placeholder="快速搜尋與圖片比對&#10;收藏與常用清單一鍵補貨&#10;自動計算點數與金額"
                         />
                       </div>
                     </div>
@@ -883,46 +942,46 @@ export default function AdminContentEditPage() {
               </SectionCard>
 
               <SectionCard 
-                title="合作要求與申請流程" 
+                title="申請條件與流程" 
                 isExpanded={expandedSections.partnersRequirements}
                 onToggle={() => setExpandedSections(prev => ({ ...prev, partnersRequirements: !prev.partnersRequirements }))}
               >
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <TextField label="要求區塊標題" value={areas?.requirements?.title || ''} onChange={(v) => updateArea(['requirements','title'], v)} placeholder="合作要求" />
-                    <TextArea label="要求區塊描述" value={areas?.requirements?.description || ''} onChange={(v) => updateArea(['requirements','description'], v)} placeholder="我們尋求具有專業能力和良好信譽的合作夥伴，共同為餐廳提供優質服務" />
+                    <TextField label="要求區塊標題" value={areas?.requirements?.title || ''} onChange={(v) => updateArea(['requirements','title'], v)} placeholder="申請條件" />
+                    <TextArea label="要求區塊描述" value={areas?.requirements?.description || ''} onChange={(v) => updateArea(['requirements','description'], v)} placeholder="我們尋求具有專業能力和良好信譽的餐廳合作夥伴，攜手提升採購效率與用餐體驗。" />
                     <div className="mt-3">
                       <label className="block mb-2 text-sm text-gray-600">要求列表 (每行一項)</label>
                       <textarea
                         value={(areas?.requirements?.requirementsList || []).join('\n')}
                         onChange={(e) => updateArea(['requirements','requirementsList'], e.target.value.split('\n').filter(f => f.trim()))}
                         className="w-full rounded-md border px-3 py-2 min-h-[150px]"
-                        placeholder="具有相關行業經驗和專業資質&#10;提供優質的產品或服務&#10;遵守行業標準和法規要求&#10;具備良好的商業信譽和財務狀況&#10;願意與我們長期合作共同發展"
+                        placeholder="註冊公司並持有有效的餐飲相關營業或食品處理牌照&#10;同意遵守平台採購與支付規範，維護良好交易信用&#10;提供餐廳基本資料與聯絡方式，以便平台確認會員資格&#10;願意配合平台的點數與結帳機制，享受整合採購服務&#10;致力於長期合作與營運成長，共同提升用餐體驗"
                       />
                     </div>
                   </div>
                   <div className="border-t pt-6">
-                    <TextField label="申請流程標題" value={areas?.requirements?.processTitle || ''} onChange={(v) => updateArea(['requirements','processTitle'], v)} placeholder="申請流程" />
+                    <TextField label="申請流程標題" value={areas?.requirements?.processTitle || ''} onChange={(v) => updateArea(['requirements','processTitle'], v)} placeholder="加入流程" />
                     <div className="space-y-4 mt-4">
                       <div className="p-4 bg-gray-50 rounded-lg border">
                         <h5 className="text-sm font-medium mb-3">步驟 1</h5>
                         <TextField label="標題" value={areas?.requirements?.step1?.title || ''} onChange={(v) => updateArea(['requirements','step1','title'], v)} placeholder="提交申請" />
-                        <TextArea label="描述" value={areas?.requirements?.step1?.description || ''} onChange={(v) => updateArea(['requirements','step1','description'], v)} placeholder="填寫合作申請表單" />
+                        <TextArea label="描述" value={areas?.requirements?.step1?.description || ''} onChange={(v) => updateArea(['requirements','step1','description'], v)} placeholder="填寫餐廳與採購需求資訊，建立平台帳戶。" />
                       </div>
                       <div className="p-4 bg-gray-50 rounded-lg border">
                         <h5 className="text-sm font-medium mb-3">步驟 2</h5>
                         <TextField label="標題" value={areas?.requirements?.step2?.title || ''} onChange={(v) => updateArea(['requirements','step2','title'], v)} placeholder="資格審核" />
-                        <TextArea label="描述" value={areas?.requirements?.step2?.description || ''} onChange={(v) => updateArea(['requirements','step2','description'], v)} placeholder="我們會審核您的申請資料" />
+                        <TextArea label="描述" value={areas?.requirements?.step2?.description || ''} onChange={(v) => updateArea(['requirements','step2','description'], v)} placeholder="專員確認餐廳營運資料並完成會員驗證。" />
                       </div>
                       <div className="p-4 bg-gray-50 rounded-lg border">
                         <h5 className="text-sm font-medium mb-3">步驟 3</h5>
-                        <TextField label="標題" value={areas?.requirements?.step3?.title || ''} onChange={(v) => updateArea(['requirements','step3','title'], v)} placeholder="面談協商" />
-                        <TextArea label="描述" value={areas?.requirements?.step3?.description || ''} onChange={(v) => updateArea(['requirements','step3','description'], v)} placeholder="進行詳細的合作討論" />
+                        <TextField label="標題" value={areas?.requirements?.step3?.title || ''} onChange={(v) => updateArea(['requirements','step3','title'], v)} placeholder="開始採購" />
+                        <TextArea label="描述" value={areas?.requirements?.step3?.description || ''} onChange={(v) => updateArea(['requirements','step3','description'], v)} placeholder="登入平台挑選食材、使用點數結帳並追蹤訂單。" />
                       </div>
                       <div className="p-4 bg-gray-50 rounded-lg border">
                         <h5 className="text-sm font-medium mb-3">步驟 4</h5>
-                        <TextField label="標題" value={areas?.requirements?.step4?.title || ''} onChange={(v) => updateArea(['requirements','step4','title'], v)} placeholder="簽約合作" />
-                        <TextArea label="描述" value={areas?.requirements?.step4?.description || ''} onChange={(v) => updateArea(['requirements','step4','description'], v)} placeholder="正式建立合作關係" />
+                        <TextField label="標題" value={areas?.requirements?.step4?.title || ''} onChange={(v) => updateArea(['requirements','step4','title'], v)} placeholder="長期合作" />
+                        <TextArea label="描述" value={areas?.requirements?.step4?.description || ''} onChange={(v) => updateArea(['requirements','step4','description'], v)} placeholder="與專員保持聯繫，持續優化採購流程與營運效率。" />
                       </div>
                     </div>
                   </div>
@@ -935,13 +994,1525 @@ export default function AdminContentEditPage() {
                 onToggle={() => setExpandedSections(prev => ({ ...prev, partnersCta: !prev.partnersCta }))}
               >
                 <div className="grid grid-cols-1 gap-4">
-                  <TextField label="標題" value={areas?.cta?.title || ''} onChange={(v) => updateArea(['cta','title'], v)} placeholder="準備好成為我們的合作夥伴了嗎？" />
-                  <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="立即提交您的合作申請，與我們攜手打造香港最優質的餐廳食品供應平台" />
+                  <TextField label="標題" value={areas?.cta?.title || ''} onChange={(v) => updateArea(['cta','title'], v)} placeholder="準備好加入 iFoodPulse 嗎？" />
+                  <TextArea label="描述" value={areas?.cta?.description || ''} onChange={(v) => updateArea(['cta','description'], v)} placeholder="立即提交申請，讓我們的團隊協助您加速採購流程、提升餐廳營運效率。" />
                   <TextField label="按鈕 1 文字" value={areas?.cta?.button1Text || ''} onChange={(v) => updateArea(['cta','button1Text'], v)} placeholder="立即申請合作" />
-                  <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="下載合作資料" />
+                  <TextField label="按鈕 2 文字" value={areas?.cta?.button2Text || ''} onChange={(v) => updateArea(['cta','button2Text'], v)} placeholder="預約顧問諮詢" />
                 </div>
               </SectionCard>
             </div>
+      ) : slug === 'faq' ? (
+            <div className="space-y-6">
+              <SectionCard 
+                title="Hero 區塊" 
+                isExpanded={expandedSections.faqHero}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, faqHero: !prev.faqHero }))}
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField label="標題" value={areas?.hero?.title || ''} onChange={(v) => updateArea(['hero','title'], v)} placeholder="F&Q" />
+                  <TextArea label="描述" value={areas?.hero?.description || ''} onChange={(v) => updateArea(['hero','description'], v)} placeholder="常見問題解答" />
+                </div>
+              </SectionCard>
+
+              <SectionCard 
+                title="常見問題 (FAQ)" 
+                isExpanded={expandedSections.faqQuestions}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, faqQuestions: !prev.faqQuestions }))}
+              >
+                <div className="grid grid-cols-1 gap-6">
+                  {Array.isArray(areas?.faq) ? (
+                    areas.faq.map((item: any, index: number) => (
+                      <div key={index} className="p-4 bg-gray-50 rounded-lg border relative">
+                        <div className="flex justify-between items-center mb-3">
+                          <h5 className="text-sm font-medium">問題 {index + 1}</h5>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newFaqs = [...(areas.faq || [])];
+                              newFaqs.splice(index, 1);
+                              updateArea(['faq'], newFaqs);
+                            }}
+                            className="text-red-600 hover:text-red-800 text-sm font-medium"
+                          >
+                            刪除
+                          </button>
+                        </div>
+                        <TextField 
+                          label="問題" 
+                          value={item?.question || ''} 
+                          onChange={(v) => {
+                            const newFaqs = [...(areas.faq || [])];
+                            newFaqs[index] = { ...newFaqs[index], question: v };
+                            updateArea(['faq'], newFaqs);
+                          }} 
+                          placeholder="輸入問題" 
+                        />
+                        <TextArea 
+                          label="答案" 
+                          value={item?.answer || ''} 
+                          onChange={(v) => {
+                            const newFaqs = [...(areas.faq || [])];
+                            newFaqs[index] = { ...newFaqs[index], answer: v };
+                            updateArea(['faq'], newFaqs);
+                          }} 
+                          placeholder="輸入答案" 
+                        />
+                      </div>
+                    ))
+                  ) : areas?.faq && typeof areas.faq === 'object' ? (
+                    // Handle legacy format (q1, q2, q3, etc.) - show convert button
+                    (() => {
+                      const legacyFaqs: any[] = [];
+                      for (let i = 1; i <= 8; i++) {
+                        const q = areas.faq[`q${i}`];
+                        if (q && (q.question || q.answer)) {
+                          legacyFaqs.push({
+                            question: q.question || '',
+                            answer: q.answer || '',
+                          });
+                        }
+                      }
+                      return (
+                        <>
+                          {legacyFaqs.length > 0 ? (
+                            <>
+                              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+                                <p className="text-sm text-yellow-800 mb-2">
+                                  偵測到舊版格式，請點擊下方按鈕轉換為新格式以繼續編輯。
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateArea(['faq'], legacyFaqs);
+                                  }}
+                                  className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm font-medium"
+                                >
+                                  轉換為新格式
+                                </button>
+                              </div>
+                              {legacyFaqs.map((item: any, index: number) => (
+                                <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                                  <h5 className="text-sm font-medium mb-3">問題 {index + 1} (舊格式)</h5>
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    <strong>問題：</strong> {item.question || '(空白)'}
+                                  </div>
+                                  <div className="text-sm text-gray-600">
+                                    <strong>答案：</strong> {item.answer || '(空白)'}
+                                  </div>
+                                </div>
+                              ))}
+                            </>
+                          ) : (
+                            <div className="text-sm text-gray-500 p-4">尚未設定問題</div>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="text-sm text-gray-500 p-4">尚未設定問題</div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentFaqs = Array.isArray(areas?.faq) 
+                        ? areas.faq 
+                        : [];
+                      updateArea(['faq'], [...currentFaqs, { question: '', answer: '' }]);
+                    }}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                  >
+                    + 添加問題
+                  </button>
+                </div>
+              </SectionCard>
+            </div>
+      ) : slug === 'restaurant-construction' ? (
+            <div className="space-y-6">
+              <SectionCard
+                title="Hero 區塊"
+                isExpanded={expandedSections.hero}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, hero: !prev.hero }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="主標題"
+                    value={areas?.hero?.title || ''}
+                    onChange={(v) => updateArea(['hero', 'title'], v)}
+                    placeholder="專業餐廳工程服務"
+                  />
+                  <TextArea
+                    label="描述"
+                    value={areas?.hero?.description || ''}
+                    onChange={(v) => updateArea(['hero', 'description'], v)}
+                    placeholder="從設計規劃到施工完成，提供全方位的餐廳工程解決方案"
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TextField
+                      label="按鈕 1 文字"
+                      value={areas?.hero?.button1Text || ''}
+                      onChange={(v) => updateArea(['hero', 'button1Text'], v)}
+                      placeholder="免費諮詢"
+                    />
+                    <TextField
+                      label="按鈕 2 文字"
+                      value={areas?.hero?.button2Text || ''}
+                      onChange={(v) => updateArea(['hero', 'button2Text'], v)}
+                      placeholder="查看案例"
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="服務項目"
+                isExpanded={expandedSections.features}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, features: !prev.features }))
+                }
+              >
+                <div className="space-y-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.services?.title || ''}
+                    onChange={(v) => updateArea(['services', 'title'], v)}
+                    placeholder="服務項目"
+                  />
+                  <TextArea
+                    label="區塊描述"
+                    value={areas?.services?.description || ''}
+                    onChange={(v) => updateArea(['services', 'description'], v)}
+                    placeholder="我們提供完整的餐廳工程服務，從設計到施工，確保每個環節都達到專業標準"
+                  />
+
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700">
+                        服務 {index + 1}
+                      </h5>
+                      <TextField
+                        label="標題"
+                        value={areas?.services?.items?.[index]?.title || ''}
+                        onChange={(v) =>
+                          updateArea(['services', 'items', index.toString(), 'title'], v)
+                        }
+                        placeholder={
+                          ['餐廳設計規劃', '廚房設備安裝', '水電工程', '空調通風系統', '消防系統', '裝修工程'][
+                            index
+                          ] || ''
+                        }
+                      />
+                      <TextArea
+                        label="描述"
+                        value={areas?.services?.items?.[index]?.description || ''}
+                        onChange={(v) =>
+                          updateArea(
+                            ['services', 'items', index.toString(), 'description'],
+                            v,
+                          )
+                        }
+                        placeholder={
+                          [
+                            '專業的餐廳空間設計，從概念到實作全程服務',
+                            '專業廚房設備安裝與配置，確保高效運作',
+                            '餐廳專用水電系統設計與安裝',
+                            '專業空調與通風系統安裝，確保舒適環境',
+                            '符合法規的消防系統設計與安裝',
+                            '室內裝修、地板、牆面等整體裝修服務',
+                          ][index] || ''
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="服務特色"
+                isExpanded={expandedSections.testimonials}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({
+                    ...prev,
+                    testimonials: !prev.testimonials,
+                  }))
+                }
+              >
+                <div className="space-y-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.features?.title || ''}
+                    onChange={(v) => updateArea(['features', 'title'], v)}
+                    placeholder="服務特色"
+                  />
+                  <TextArea
+                    label="區塊描述"
+                    value={areas?.features?.description || ''}
+                    onChange={(v) => updateArea(['features', 'description'], v)}
+                    placeholder="我們致力於為客戶提供最優質的工程服務，確保每個項目都能完美完成"
+                  />
+
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700">
+                        特色 {index + 1}
+                      </h5>
+                      <TextField
+                        label="標題"
+                        value={areas?.features?.items?.[index]?.title || ''}
+                        onChange={(v) =>
+                          updateArea(['features', 'items', index.toString(), 'title'], v)
+                        }
+                        placeholder={
+                          ['專業團隊', '品質保證', '快速施工', '售後服務'][index] || ''
+                        }
+                      />
+                      <TextArea
+                        label="描述"
+                        value={areas?.features?.items?.[index]?.description || ''}
+                        onChange={(v) =>
+                          updateArea(
+                            ['features', 'items', index.toString(), 'description'],
+                            v,
+                          )
+                        }
+                        placeholder={
+                          [
+                            '擁有豐富餐廳工程經驗的專業團隊',
+                            '使用優質材料，提供品質保證',
+                            '高效施工流程，縮短營業中斷時間',
+                            '完善的售後服務與維護保養',
+                          ][index] || ''
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="聯絡區塊"
+                isExpanded={expandedSections.cta}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, cta: !prev.cta }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="標題"
+                    value={areas?.contact?.title || ''}
+                    onChange={(v) => updateArea(['contact', 'title'], v)}
+                    placeholder="立即諮詢"
+                  />
+                  <TextArea
+                    label="描述"
+                    value={areas?.contact?.description || ''}
+                    onChange={(v) => updateArea(['contact', 'description'], v)}
+                    placeholder="專業團隊為您提供免費諮詢與報價服務，讓我們為您的餐廳工程提供最佳解決方案"
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TextField
+                      label="按鈕 1 文字"
+                      value={areas?.contact?.button1Text || ''}
+                      onChange={(v) => updateArea(['contact', 'button1Text'], v)}
+                      placeholder="聯絡我們"
+                    />
+                    <TextField
+                      label="按鈕 2 文字"
+                      value={areas?.contact?.button2Text || ''}
+                      onChange={(v) => updateArea(['contact', 'button2Text'], v)}
+                      placeholder="免費報價"
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+        </div>
+      ) : slug === 'restaurant-furniture' ? (
+            <div className="space-y-6">
+              <SectionCard
+                title="Hero 區塊"
+                isExpanded={expandedSections.hero}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, hero: !prev.hero }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="主標題"
+                    value={areas?.hero?.title || ''}
+                    onChange={(v) => updateArea(['hero', 'title'], v)}
+                    placeholder="專業餐廳傢具"
+                  />
+                  <TextArea
+                    label="描述"
+                    value={areas?.hero?.description || ''}
+                    onChange={(v) => updateArea(['hero', 'description'], v)}
+                    placeholder="提供各式餐廳傢具，打造舒適優雅的用餐環境"
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TextField
+                      label="按鈕 1 文字"
+                      value={areas?.hero?.button1Text || ''}
+                      onChange={(v) => updateArea(['hero', 'button1Text'], v)}
+                      placeholder="免費諮詢"
+                    />
+                    <TextField
+                      label="按鈕 2 文字"
+                      value={areas?.hero?.button2Text || ''}
+                      onChange={(v) => updateArea(['hero', 'button2Text'], v)}
+                      placeholder="預約參觀"
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="傢具類別"
+                isExpanded={expandedSections.features}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, features: !prev.features }))
+                }
+              >
+                <div className="space-y-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.categories?.title || ''}
+                    onChange={(v) => updateArea(['categories', 'title'], v)}
+                    placeholder="傢具類別"
+                  />
+                  <TextArea
+                    label="區塊描述"
+                    value={areas?.categories?.description || ''}
+                    onChange={(v) => updateArea(['categories', 'description'], v)}
+                    placeholder="點擊查看詳細資訊，我們提供多種傢具類別滿足不同需求"
+                  />
+
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700">
+                        類別 {index + 1}
+                      </h5>
+                      <TextField
+                        label="標題"
+                        value={areas?.categories?.items?.[index]?.title || ''}
+                        onChange={(v) =>
+                          updateArea(['categories', 'items', index.toString(), 'title'], v)
+                        }
+                        placeholder={
+                          ['餐桌椅組合', '沙發座椅', '收納櫃', '吧台設備', '裝飾傢具', '戶外傢具'][
+                            index
+                          ] || ''
+                        }
+                      />
+                      <TextArea
+                        label="描述"
+                        value={areas?.categories?.items?.[index]?.description || ''}
+                        onChange={(v) =>
+                          updateArea(
+                            ['categories', 'items', index.toString(), 'description'],
+                            v,
+                          )
+                        }
+                        placeholder={
+                          [
+                            '各式餐桌椅組合，適合不同餐廳風格',
+                            '舒適的沙發座椅，提升用餐體驗',
+                            '實用的收納櫃，保持餐廳整潔',
+                            '專業吧台設備，打造完美酒吧區',
+                            '精美裝飾傢具，營造餐廳氛圍',
+                            '耐用戶外傢具，適合露天用餐區',
+                          ][index] || ''
+                        }
+                      />
+                      <TextField
+                        label="價格範圍"
+                        value={areas?.categories?.items?.[index]?.priceRange || ''}
+                        onChange={(v) =>
+                          updateArea(
+                            ['categories', 'items', index.toString(), 'priceRange'],
+                            v,
+                          )
+                        }
+                        placeholder={
+                          [
+                            'HKD$ 2,000 - 15,000',
+                            'HKD$ 3,000 - 25,000',
+                            'HKD$ 1,500 - 12,000',
+                            'HKD$ 5,000 - 30,000',
+                            'HKD$ 800 - 8,000',
+                            'HKD$ 2,500 - 20,000',
+                          ][index] || ''
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="服務特色"
+                isExpanded={expandedSections.testimonials}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({
+                    ...prev,
+                    testimonials: !prev.testimonials,
+                  }))
+                }
+              >
+                <div className="space-y-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.services?.title || ''}
+                    onChange={(v) => updateArea(['services', 'title'], v)}
+                    placeholder="服務特色"
+                  />
+                  <TextArea
+                    label="區塊描述"
+                    value={areas?.services?.description || ''}
+                    onChange={(v) => updateArea(['services', 'description'], v)}
+                    placeholder="提供客製化設計、專業安裝、品質保證與完善售後服務"
+                  />
+
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700">
+                        服務 {index + 1}
+                      </h5>
+                      <TextField
+                        label="標題"
+                        value={areas?.services?.items?.[index]?.title || ''}
+                        onChange={(v) =>
+                          updateArea(['services', 'items', index.toString(), 'title'], v)
+                        }
+                        placeholder={
+                          ['客製化設計', '專業安裝', '品質保證', '售後服務'][index] || ''
+                        }
+                      />
+                      <TextArea
+                        label="描述"
+                        value={areas?.services?.items?.[index]?.description || ''}
+                        onChange={(v) =>
+                          updateArea(
+                            ['services', 'items', index.toString(), 'description'],
+                            v,
+                          )
+                        }
+                        placeholder={
+                          [
+                            '根據餐廳風格提供客製化傢具設計',
+                            '專業團隊提供傢具安裝服務',
+                            '使用優質材料，提供品質保證',
+                            '完善的售後服務與維護保養',
+                          ][index] || ''
+                        }
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {Array.from({ length: 4 }).map((__, fIndex) => (
+                          <TextField
+                            key={fIndex}
+                            label={`特色標籤 ${fIndex + 1}`}
+                            value={
+                              areas?.services?.items?.[index]?.features?.[fIndex] || ''
+                            }
+                            onChange={(v) =>
+                              updateArea(
+                                [
+                                  'services',
+                                  'items',
+                                  index.toString(),
+                                  'features',
+                                  fIndex.toString(),
+                                ],
+                                v,
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="聯絡區塊"
+                isExpanded={expandedSections.cta}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, cta: !prev.cta }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="標題"
+                    value={areas?.contact?.title || ''}
+                    onChange={(v) => updateArea(['contact', 'title'], v)}
+                    placeholder="立即諮詢"
+                  />
+                  <TextArea
+                    label="描述"
+                    value={areas?.contact?.description || ''}
+                    onChange={(v) => updateArea(['contact', 'description'], v)}
+                    placeholder="專業團隊為您提供傢具諮詢與報價服務"
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TextField
+                      label="按鈕 1 文字"
+                      value={areas?.contact?.button1Text || ''}
+                      onChange={(v) => updateArea(['contact', 'button1Text'], v)}
+                      placeholder="聯絡我們"
+                    />
+                    <TextField
+                      label="按鈕 2 文字"
+                      value={areas?.contact?.button2Text || ''}
+                      onChange={(v) => updateArea(['contact', 'button2Text'], v)}
+                      placeholder="預約參觀"
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          ) : slug === 'kitchen-equipment' ? (
+        <div className="space-y-6">
+          <SectionCard
+            title="Hero 區塊"
+            isExpanded={expandedSections.hero}
+            onToggle={() =>
+              setExpandedSections(prev => ({ ...prev, hero: !prev.hero }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.hero?.title || ''}
+              onChange={v => updateArea(['hero', 'title'], v)}
+              placeholder="專業廚房設備"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.hero?.description || ''}
+              onChange={v => updateArea(['hero', 'description'], v)}
+              placeholder="提供全套廚房設備解決方案，提升餐廳營運效率"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.hero?.button1Text || ''}
+              onChange={v => updateArea(['hero', 'button1Text'], v)}
+              placeholder="免費諮詢"
+            />
+            <TextField
+              label="按鈕 2 文字"
+              value={areas?.hero?.button2Text || ''}
+              onChange={v => updateArea(['hero', 'button2Text'], v)}
+              placeholder="查看設備"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="設備類別區塊"
+            isExpanded={expandedSections.categories}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                categories: !prev.categories,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.categories?.title || ''}
+              onChange={v => updateArea(['categories', 'title'], v)}
+              placeholder="設備類別"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.categories?.description || ''}
+              onChange={v => updateArea(['categories', 'description'], v)}
+              placeholder="我們提供多種廚房設備類別，滿足不同餐廳的需求"
+            />
+            {areas?.categories?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                <h5 className="text-sm font-medium mb-3">
+                  設備類別 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['categories', 'items', index, 'title'], v)
+                  }
+                  placeholder={`設備類別 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['categories', 'items', index, 'description'], v)
+                  }
+                  placeholder={`設備類別 ${index + 1} 描述`}
+                />
+                <TextArea
+                  label="設備項目（以逗號分隔）"
+                  value={(item.items || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'items'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean)
+                    )
+                  }
+                  placeholder="爐具, 烤箱, 蒸籠, 炸鍋, 烤架, 平底鍋"
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="服務項目"
+            isExpanded={expandedSections.services}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                services: !prev.services,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.services?.title || ''}
+              onChange={v => updateArea(['services', 'title'], v)}
+              placeholder="服務項目"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.services?.description || ''}
+              onChange={v => updateArea(['services', 'description'], v)}
+              placeholder="我們提供完整的廚房設備服務，確保設備正常運作"
+            />
+            {areas?.services?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                <h5 className="text-sm font-medium mb-3">
+                  服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'title'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'description'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 描述`}
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="設備特色"
+            isExpanded={expandedSections.features}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                features: !prev.features,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.features?.title || ''}
+              onChange={v => updateArea(['features', 'title'], v)}
+              placeholder="設備特色"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.features?.description || ''}
+              onChange={v => updateArea(['features', 'description'], v)}
+              placeholder="我們的設備具有多項特色，為您的餐廳帶來更多價值"
+            />
+            {areas?.features?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                <h5 className="text-sm font-medium mb-3">
+                  特色 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'title'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'description'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 描述`}
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="聯絡區塊"
+            isExpanded={expandedSections.contact}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                contact: !prev.contact,
+              }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.contact?.title || ''}
+              onChange={v => updateArea(['contact', 'title'], v)}
+              placeholder="立即諮詢"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.contact?.description || ''}
+              onChange={v => updateArea(['contact', 'description'], v)}
+              placeholder="專業團隊為您提供廚房設備諮詢與報價服務"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.contact?.button1Text || ''}
+              onChange={v => updateArea(['contact', 'button1Text'], v)}
+              placeholder="聯絡我們"
+            />
+            <TextField
+              label="按鈕 2 文字"
+              value={areas?.contact?.button2Text || ''}
+              onChange={v => updateArea(['contact', 'button2Text'], v)}
+              placeholder="免費報價"
+            />
+          </SectionCard>
+        </div>
+      ) : slug === 'promotion' ? (
+        <div className="space-y-6">
+          <SectionCard
+            title="Hero 區塊"
+            isExpanded={expandedSections.hero}
+            onToggle={() =>
+              setExpandedSections(prev => ({ ...prev, hero: !prev.hero }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.hero?.title || ''}
+              onChange={v => updateArea(['hero', 'title'], v)}
+              placeholder="餐廳宣傳服務"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.hero?.description || ''}
+              onChange={v => updateArea(['hero', 'description'], v)}
+              placeholder="專業行銷團隊為您的餐廳提供全方位宣傳解決方案"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.hero?.button1Text || ''}
+              onChange={v => updateArea(['hero', 'button1Text'], v)}
+              placeholder="免費諮詢"
+            />
+            <TextField
+              label="按鈕 2 文字"
+              value={areas?.hero?.button2Text || ''}
+              onChange={v => updateArea(['hero', 'button2Text'], v)}
+              placeholder="查看案例"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="宣傳服務卡片"
+            isExpanded={expandedSections.promotionServices}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                promotionServices: !prev.promotionServices,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.promotionServices?.title || ''}
+              onChange={v => updateArea(['promotionServices', 'title'], v)}
+              placeholder="宣傳服務"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.promotionServices?.description || ''}
+              onChange={v => updateArea(['promotionServices', 'description'], v)}
+              placeholder="點擊查看詳細資訊，我們提供多種宣傳服務滿足不同需求"
+            />
+            {areas?.promotionServices?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  宣傳服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['promotionServices', 'items', index, 'title'], v)
+                  }
+                  placeholder={`宣傳服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['promotionServices', 'items', index, 'description'],
+                      v,
+                    )
+                  }
+                  placeholder={`宣傳服務 ${index + 1} 描述`}
+                />
+                <TextField
+                  label="價格範圍"
+                  value={item.priceRange || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['promotionServices', 'items', index, 'priceRange'],
+                      v,
+                    )
+                  }
+                  placeholder="HKD$ 3,000 - 15,000/月"
+                />
+                <TextField
+                  label="是否熱門 (true / false)"
+                  value={item.popular ? 'true' : 'false'}
+                  onChange={v =>
+                    updateArea(
+                      ['promotionServices', 'items', index, 'popular'],
+                      v === 'true',
+                    )
+                  }
+                  placeholder="true 或 false"
+                />
+                <TextArea
+                  label="服務項目（以逗號分隔）"
+                  value={(item.items || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['promotionServices', 'items', index, 'items'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="社群媒體管理, Google廣告, Facebook廣告..."
+                />
+                <TextArea
+                  label="服務特色（以逗號分隔）"
+                  value={(item.features || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['promotionServices', 'items', index, 'features'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="數據分析, A/B測試, ROI追蹤..."
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="服務特色區塊"
+            isExpanded={expandedSections.services}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                services: !prev.services,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.services?.title || ''}
+              onChange={v => updateArea(['services', 'title'], v)}
+              placeholder="服務特色"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.services?.description || ''}
+              onChange={v => updateArea(['services', 'description'], v)}
+              placeholder="我們提供全方位的宣傳服務，從策略到執行，確保最佳效果"
+            />
+            {areas?.services?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'title'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'description'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 描述`}
+                />
+                <TextArea
+                  label="特色標籤（以逗號分隔）"
+                  value={(item.features || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['services', 'items', index, 'features'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="市場分析, 競爭分析, 目標設定..."
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="聯絡區塊"
+            isExpanded={expandedSections.contact}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                contact: !prev.contact,
+              }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.contact?.title || ''}
+              onChange={v => updateArea(['contact', 'title'], v)}
+              placeholder="立即諮詢"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.contact?.description || ''}
+              onChange={v => updateArea(['contact', 'description'], v)}
+              placeholder="專業行銷團隊為您提供免費諮詢與方案規劃"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.contact?.button1Text || ''}
+              onChange={v => updateArea(['contact', 'button1Text'], v)}
+              placeholder="聯絡我們"
+            />
+            <TextField
+              label="按鈕 2 文字"
+              value={areas?.contact?.button2Text || ''}
+              onChange={v => updateArea(['contact', 'button2Text'], v)}
+              placeholder="預約會議"
+            />
+          </SectionCard>
+        </div>
+      ) : slug === 'dishes-tableware' ? (
+        <div className="space-y-6">
+          <SectionCard
+            title="Hero 區塊"
+            isExpanded={expandedSections.hero}
+            onToggle={() =>
+              setExpandedSections(prev => ({ ...prev, hero: !prev.hero }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.hero?.title || ''}
+              onChange={v => updateArea(['hero', 'title'], v)}
+              placeholder="專業餐碟餐具"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.hero?.description || ''}
+              onChange={v => updateArea(['hero', 'description'], v)}
+              placeholder="提升用餐體驗，展現餐廳品味，提供多款高品質餐碟餐具選擇。"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="產品分類區塊"
+            isExpanded={expandedSections.categories}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                categories: !prev.categories,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.categories?.title || ''}
+              onChange={v => updateArea(['categories', 'title'], v)}
+              placeholder="產品分類"
+            />
+            <TextArea
+              label="區塊描述"
+              value={areas?.categories?.description || ''}
+              onChange={v => updateArea(['categories', 'description'], v)}
+              placeholder="我們提供多種餐碟餐具產品，從基本款到高級款一應俱全。"
+            />
+            {areas?.categories?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  產品分類 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['categories', 'items', index, 'title'], v)
+                  }
+                  placeholder={`產品分類 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'description'],
+                      v,
+                    )
+                  }
+                  placeholder={`產品分類 ${index + 1} 描述`}
+                />
+                <TextField
+                  label="價格範圍"
+                  value={item.priceRange || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'priceRange'],
+                      v,
+                    )
+                  }
+                  placeholder="HKD$ 200 - 2,000"
+                />
+                <TextField
+                  label="是否熱門 (true / false)"
+                  value={item.popular ? 'true' : 'false'}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'popular'],
+                      v === 'true',
+                    )
+                  }
+                  placeholder="true 或 false"
+                />
+                <TextArea
+                  label="產品項目（以逗號分隔）"
+                  value={(item.items || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'items'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="陶瓷餐具, 骨瓷餐具, 不鏽鋼餐具..."
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="服務特色區塊"
+            isExpanded={expandedSections.services}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                services: !prev.services,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.services?.title || ''}
+              onChange={v => updateArea(['services', 'title'], v)}
+              placeholder="服務特色"
+            />
+            {areas?.services?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'title'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['services', 'items', index, 'description'], v)
+                  }
+                  placeholder={`服務 ${index + 1} 描述`}
+                />
+                <TextArea
+                  label="特色標籤（以逗號分隔）"
+                  value={(item.features || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['services', 'items', index, 'features'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="免費設計諮詢, 品牌定制, 材質選擇..."
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="聯絡區塊"
+            isExpanded={expandedSections.contact}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                contact: !prev.contact,
+              }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.contact?.title || ''}
+              onChange={v => updateArea(['contact', 'title'], v)}
+              placeholder="立即聯繫我們"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.contact?.description || ''}
+              onChange={v => updateArea(['contact', 'description'], v)}
+              placeholder="專業團隊為您提供最優質的服務"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.contact?.button1Text || ''}
+              onChange={v => updateArea(['contact', 'button1Text'], v)}
+              placeholder="聯絡我們"
+            />
+          </SectionCard>
+        </div>
+      ) : slug === 'restaurant-maintenance' ? (
+        <div className="space-y-6">
+          <SectionCard
+            title="Hero 區塊"
+            isExpanded={expandedSections.hero}
+            onToggle={() =>
+              setExpandedSections(prev => ({ ...prev, hero: !prev.hero }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.hero?.title || ''}
+              onChange={v => updateArea(['hero', 'title'], v)}
+              placeholder="專業餐飲維修"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.hero?.description || ''}
+              onChange={v => updateArea(['hero', 'description'], v)}
+              placeholder="24小時服務，快速解決問題，確保餐廳營運不中斷。"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="維修服務區塊"
+            isExpanded={expandedSections.categories}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                categories: !prev.categories,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.categories?.title || ''}
+              onChange={v => updateArea(['categories', 'title'], v)}
+              placeholder="維修服務"
+            />
+            {areas?.categories?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  維修服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['categories', 'items', index, 'title'], v)
+                  }
+                  placeholder={`維修服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'description'],
+                      v,
+                    )
+                  }
+                  placeholder={`維修服務 ${index + 1} 描述`}
+                />
+                <TextArea
+                  label="服務項目（以逗號分隔）"
+                  value={(item.items || []).join(', ')}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'items'],
+                      v
+                        .split(',')
+                        .map((s: string) => s.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                  placeholder="廚房設備, 空調系統, 冰箱維修..."
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="服務特色區塊"
+            isExpanded={expandedSections.features}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                features: !prev.features,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.features?.title || ''}
+              onChange={v => updateArea(['features', 'title'], v)}
+              placeholder="服務特色"
+            />
+            {areas?.features?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  特色 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'title'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'description'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 描述`}
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="聯絡區塊"
+            isExpanded={expandedSections.contact}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                contact: !prev.contact,
+              }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.contact?.title || ''}
+              onChange={v => updateArea(['contact', 'title'], v)}
+              placeholder="立即聯繫我們"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.contact?.description || ''}
+              onChange={v => updateArea(['contact', 'description'], v)}
+              placeholder="專業團隊為您提供最優質的維修服務，保持設備運作順暢。"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.contact?.button1Text || ''}
+              onChange={v => updateArea(['contact', 'button1Text'], v)}
+              placeholder="聯絡我們"
+            />
+          </SectionCard>
+        </div>
+      ) : slug === 'restaurant-systems' ? (
+        <div className="space-y-6">
+          <SectionCard
+            title="Hero 區塊"
+            isExpanded={expandedSections.hero}
+            onToggle={() =>
+              setExpandedSections(prev => ({ ...prev, hero: !prev.hero }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.hero?.title || ''}
+              onChange={v => updateArea(['hero', 'title'], v)}
+              placeholder="智能餐飲系統"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.hero?.description || ''}
+              onChange={v => updateArea(['hero', 'description'], v)}
+              placeholder="提升營運效率，優化客戶體驗，為餐廳提供一站式系統解決方案。"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="系統服務區塊"
+            isExpanded={expandedSections.categories}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                categories: !prev.categories,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.categories?.title || ''}
+              onChange={v => updateArea(['categories', 'title'], v)}
+              placeholder="系統服務"
+            />
+            {areas?.categories?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  系統服務 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['categories', 'items', index, 'title'], v)
+                  }
+                  placeholder={`系統服務 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(
+                      ['categories', 'items', index, 'description'],
+                      v,
+                    )
+                  }
+                  placeholder={`系統服務 ${index + 1} 描述`}
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="服務特色區塊"
+            isExpanded={expandedSections.features}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                features: !prev.features,
+              }))
+            }
+          >
+            <TextField
+              label="區塊標題"
+              value={areas?.features?.title || ''}
+              onChange={v => updateArea(['features', 'title'], v)}
+              placeholder="服務特色"
+            />
+            {areas?.features?.items?.map((item: any, index: number) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                <h5 className="text-sm font-medium text-gray-700">
+                  特色 {index + 1}
+                </h5>
+                <TextField
+                  label="標題"
+                  value={item.title || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'title'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 標題`}
+                />
+                <TextArea
+                  label="描述"
+                  value={item.description || ''}
+                  onChange={v =>
+                    updateArea(['features', 'items', index, 'description'], v)
+                  }
+                  placeholder={`特色 ${index + 1} 描述`}
+                />
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="聯絡區塊"
+            isExpanded={expandedSections.contact}
+            onToggle={() =>
+              setExpandedSections(prev => ({
+                ...prev,
+                contact: !prev.contact,
+              }))
+            }
+          >
+            <TextField
+              label="主標題"
+              value={areas?.contact?.title || ''}
+              onChange={v => updateArea(['contact', 'title'], v)}
+              placeholder="立即聯繫我們"
+            />
+            <TextArea
+              label="描述"
+              value={areas?.contact?.description || ''}
+              onChange={v => updateArea(['contact', 'description'], v)}
+              placeholder="專業團隊為您提供最優質的系統規劃與導入服務。"
+            />
+            <TextField
+              label="按鈕 1 文字"
+              value={areas?.contact?.button1Text || ''}
+              onChange={v => updateArea(['contact', 'button1Text'], v)}
+              placeholder="聯絡我們"
+            />
+          </SectionCard>
+        </div>
           ) : slug === 'mobile-app' ? (
             <div className="space-y-6">
               <SectionCard 
@@ -958,6 +2529,7 @@ export default function AdminContentEditPage() {
                         updateArea(['logo','image'], url);
                         setUploadError(null);
                       }}
+                      onUploadingChange={handleUploadingChange}
                       onError={(err) => setUploadError(`Logo 圖片上傳失敗: ${err}`)}
                       className="w-full"
                       folder="app_images"
@@ -999,6 +2571,7 @@ export default function AdminContentEditPage() {
                           updateArea(['banners','banner1','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`Banner 1 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1016,6 +2589,7 @@ export default function AdminContentEditPage() {
                           updateArea(['banners','banner2','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`Banner 2 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1033,6 +2607,7 @@ export default function AdminContentEditPage() {
                           updateArea(['banners','banner3','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`Banner 3 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1050,6 +2625,7 @@ export default function AdminContentEditPage() {
                           updateArea(['banners','banner4','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`Banner 4 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1076,6 +2652,7 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category1','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 1 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1083,6 +2660,13 @@ export default function AdminContentEditPage() {
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
                     <TextField label="標題" value={areas?.categories?.category1?.title || ''} onChange={(v) => updateArea(['categories','category1','title'], v)} placeholder="食材訂購" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category1?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category1','screenRedirect'], v)} 
+                      placeholder="Categories"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">可用選項: Categories, RestaurantConstruction, RestaurantFurniture, KitchenEquipment, Promotion, DishesTableware, RestaurantMaintenance, RestaurantSystems</p>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 2</h5>
@@ -1094,13 +2678,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category2','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 2 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category2?.title || ''} onChange={(v) => updateArea(['categories','category2','title'], v)} placeholder="餐廳工程" />
+                    <TextField label="標題" value={areas?.categories?.category2?.title || ''} onChange={(v) => updateArea(['categories','category2','title'], v)} placeholder="商業維修" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category2?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category2','screenRedirect'], v)} 
+                      placeholder="RestaurantConstruction"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 3</h5>
@@ -1112,13 +2703,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category3','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 3 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category3?.title || ''} onChange={(v) => updateArea(['categories','category3','title'], v)} placeholder="餐廳傢具" />
+                    <TextField label="標題" value={areas?.categories?.category3?.title || ''} onChange={(v) => updateArea(['categories','category3','title'], v)} placeholder="廚房設備" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category3?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category3','screenRedirect'], v)} 
+                      placeholder="RestaurantFurniture"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 4</h5>
@@ -1130,13 +2728,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category4','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 4 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category4?.title || ''} onChange={(v) => updateArea(['categories','category4','title'], v)} placeholder="廚房設備" />
+                    <TextField label="標題" value={areas?.categories?.category4?.title || ''} onChange={(v) => updateArea(['categories','category4','title'], v)} placeholder="餐碟餐具" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category4?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category4','screenRedirect'], v)} 
+                      placeholder="KitchenEquipment"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 5</h5>
@@ -1148,13 +2753,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category5','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 5 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category5?.title || ''} onChange={(v) => updateArea(['categories','category5','title'], v)} placeholder="宣傳" />
+                    <TextField label="標題" value={areas?.categories?.category5?.title || ''} onChange={(v) => updateArea(['categories','category5','title'], v)} placeholder="傢俬訂製" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category5?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category5','screenRedirect'], v)} 
+                      placeholder="Promotion"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 6</h5>
@@ -1166,13 +2778,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category6','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 6 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category6?.title || ''} onChange={(v) => updateArea(['categories','category6','title'], v)} placeholder="餐碟餐具" />
+                    <TextField label="標題" value={areas?.categories?.category6?.title || ''} onChange={(v) => updateArea(['categories','category6','title'], v)} placeholder="廣告宣傳" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category6?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category6','screenRedirect'], v)} 
+                      placeholder="DishesTableware"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 7</h5>
@@ -1184,13 +2803,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category7','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 7 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category7?.title || ''} onChange={(v) => updateArea(['categories','category7','title'], v)} placeholder="餐飲維修" />
+                    <TextField label="標題" value={areas?.categories?.category7?.title || ''} onChange={(v) => updateArea(['categories','category7','title'], v)} placeholder="系統保安" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category7?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category7','screenRedirect'], v)} 
+                      placeholder="RestaurantMaintenance"
+                    />
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
                     <h5 className="text-sm font-medium mb-3">分類 8</h5>
@@ -1202,13 +2828,20 @@ export default function AdminContentEditPage() {
                           updateArea(['categories','category8','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`分類 8 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 100x100px 或更高解析度</p>
                     </div>
-                    <TextField label="標題" value={areas?.categories?.category8?.title || ''} onChange={(v) => updateArea(['categories','category8','title'], v)} placeholder="餐飲系統" />
+                    <TextField label="標題" value={areas?.categories?.category8?.title || ''} onChange={(v) => updateArea(['categories','category8','title'], v)} placeholder="商業工程" />
+                    <TextField 
+                      label="畫面導向 (Screen Redirect)" 
+                      value={areas?.categories?.category8?.screenRedirect || ''} 
+                      onChange={(v) => updateArea(['categories','category8','screenRedirect'], v)} 
+                      placeholder="RestaurantSystems"
+                    />
                   </div>
                 </div>
               </SectionCard>
@@ -1229,6 +2862,7 @@ export default function AdminContentEditPage() {
                           updateArea(['longBanners','long1','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`長型 Banner 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
@@ -1255,11 +2889,38 @@ export default function AdminContentEditPage() {
                           updateArea(['promotionalBanners','promo1','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`促銷 Banner 1 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 600x300px</p>
+                    </div>
+                    <div className="mt-4">
+                      <label className="block mb-2 text-sm font-medium text-gray-700">詳情圖片</label>
+                      <ImageUploader
+                        value={areas?.promotionalBanners?.promo1?.detailImage || ''}
+                        onChange={(url) => {
+                          updateArea(['promotionalBanners','promo1','detailImage'], url);
+                          setUploadError(null);
+                        }}
+                        onUploadingChange={handleUploadingChange}
+                        onError={(err) => setUploadError(`促銷 Banner 1 詳情圖片上傳失敗: ${err}`)}
+                        className="w-full"
+                        folder="images"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">建議尺寸: 800x400px 或更高解析度（用於詳情頁顯示）</p>
+                    </div>
+                    <div className="mt-4">
+                      <TextField
+                        label="詳情URL"
+                        value={areas?.promotionalBanners?.promo1?.detailUrl || ''}
+                        onChange={(v) => {
+                          updateArea(['promotionalBanners','promo1','detailUrl'], v);
+                        }}
+                        placeholder="https://example.com"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">此連結將顯示在詳情圖片下方</p>
                     </div>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
@@ -1272,11 +2933,38 @@ export default function AdminContentEditPage() {
                           updateArea(['promotionalBanners','promo2','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`促銷 Banner 2 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 600x300px</p>
+                    </div>
+                    <div className="mt-4">
+                      <label className="block mb-2 text-sm font-medium text-gray-700">詳情圖片</label>
+                      <ImageUploader
+                        value={areas?.promotionalBanners?.promo2?.detailImage || ''}
+                        onChange={(url) => {
+                          updateArea(['promotionalBanners','promo2','detailImage'], url);
+                          setUploadError(null);
+                        }}
+                        onUploadingChange={handleUploadingChange}
+                        onError={(err) => setUploadError(`促銷 Banner 2 詳情圖片上傳失敗: ${err}`)}
+                        className="w-full"
+                        folder="images"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">建議尺寸: 800x400px 或更高解析度（用於詳情頁顯示）</p>
+                    </div>
+                    <div className="mt-4">
+                      <TextField
+                        label="詳情URL"
+                        value={areas?.promotionalBanners?.promo2?.detailUrl || ''}
+                        onChange={(v) => {
+                          updateArea(['promotionalBanners','promo2','detailUrl'], v);
+                        }}
+                        placeholder="https://example.com"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">此連結將顯示在詳情圖片下方</p>
                     </div>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg border">
@@ -1289,11 +2977,38 @@ export default function AdminContentEditPage() {
                           updateArea(['promotionalBanners','promo3','image'], url);
                           setUploadError(null);
                         }}
+                        onUploadingChange={handleUploadingChange}
                         onError={(err) => setUploadError(`促銷 Banner 3 圖片上傳失敗: ${err}`)}
                         className="w-full"
                         folder="app_images"
                       />
                       <p className="mt-1 text-xs text-gray-500">建議尺寸: 600x300px</p>
+                    </div>
+                    <div className="mt-4">
+                      <label className="block mb-2 text-sm font-medium text-gray-700">詳情圖片</label>
+                      <ImageUploader
+                        value={areas?.promotionalBanners?.promo3?.detailImage || ''}
+                        onChange={(url) => {
+                          updateArea(['promotionalBanners','promo3','detailImage'], url);
+                          setUploadError(null);
+                        }}
+                        onUploadingChange={handleUploadingChange}
+                        onError={(err) => setUploadError(`促銷 Banner 3 詳情圖片上傳失敗: ${err}`)}
+                        className="w-full"
+                        folder="images"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">建議尺寸: 800x400px 或更高解析度（用於詳情頁顯示）</p>
+                    </div>
+                    <div className="mt-4">
+                      <TextField
+                        label="詳情URL"
+                        value={areas?.promotionalBanners?.promo3?.detailUrl || ''}
+                        onChange={(v) => {
+                          updateArea(['promotionalBanners','promo3','detailUrl'], v);
+                        }}
+                        placeholder="https://example.com"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">此連結將顯示在詳情圖片下方</p>
                     </div>
                   </div>
                 </div>
@@ -1332,11 +3047,25 @@ export default function AdminContentEditPage() {
                               updateArea(['squareBanners'], newBanners);
                               setUploadError(null);
                             }}
+                            onUploadingChange={handleUploadingChange}
                             onError={(err) => setUploadError(`方形 Banner ${index + 1} 圖片上傳失敗: ${err}`)}
                             className="w-full"
                             folder="app_images"
                           />
                           <p className="mt-1 text-xs text-gray-500">建議尺寸: 400x400px 或更高解析度</p>
+                        </div>
+                        <div className="mt-4">
+                          <TextField
+                            label="重定向 URL"
+                            value={banner?.url || ''}
+                            onChange={(v) => {
+                              const newBanners = [...(areas.squareBanners || [])];
+                              newBanners[index] = { ...newBanners[index], url: v };
+                              updateArea(['squareBanners'], newBanners);
+                            }}
+                            placeholder="https://example.com"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">點擊 Banner 時將重定向到此外部網站 URL（選填）</p>
                         </div>
                       </div>
                     ))
@@ -1357,6 +3086,7 @@ export default function AdminContentEditPage() {
                                 updateArea(['squareBanners'], newBanners);
                                 setUploadError(null);
                               }}
+                              onUploadingChange={handleUploadingChange}
                               onError={(err) => setUploadError(`方形 Banner 1 圖片上傳失敗: ${err}`)}
                               className="w-full"
                               folder="app_images"
@@ -1381,6 +3111,7 @@ export default function AdminContentEditPage() {
                                 updateArea(['squareBanners'], newBanners);
                                 setUploadError(null);
                               }}
+                              onUploadingChange={handleUploadingChange}
                               onError={(err) => setUploadError(`方形 Banner 2 圖片上傳失敗: ${err}`)}
                               className="w-full"
                               folder="app_images"
@@ -1425,11 +3156,275 @@ export default function AdminContentEditPage() {
                         updateArea(['popupBanner','image'], url);
                         setUploadError(null);
                       }}
+                      onUploadingChange={handleUploadingChange}
                       onError={(err) => setUploadError(`彈出式 Banner 圖片上傳失敗: ${err}`)}
                       className="w-full"
                       folder="app_images"
                     />
                     <p className="mt-1 text-xs text-gray-500">建議尺寸: 600x800px 或更高解析度</p>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard 
+                title="購物車 Banner" 
+                isExpanded={expandedSections.mobileCartBanner}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, mobileCartBanner: !prev.mobileCartBanner }))}
+              >
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="p-4 bg-gray-50 rounded-lg border">
+                    <h5 className="text-sm font-medium mb-3">購物車 Banner</h5>
+                    <div>
+                      <label className="block mb-2 text-sm font-medium text-gray-700">Banner 圖片</label>
+                      <ImageUploader
+                        value={areas?.cartBanner?.image || ''}
+                        onChange={(url) => {
+                          updateArea(['cartBanner','image'], url);
+                          setUploadError(null);
+                        }}
+                        onUploadingChange={handleUploadingChange}
+                        onError={(err) => setUploadError(`購物車 Banner 圖片上傳失敗: ${err}`)}
+                        className="w-full"
+                        folder="app_images"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">建議尺寸: 800x200px 或更高解析度（與長型 Banner 相同尺寸）</p>
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard 
+                title="我的訂單 Banner" 
+                isExpanded={expandedSections.mobileOrdersBanner}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, mobileOrdersBanner: !prev.mobileOrdersBanner }))}
+              >
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="p-4 bg-gray-50 rounded-lg border">
+                    <h5 className="text-sm font-medium mb-3">我的訂單 Banner</h5>
+                    <div>
+                      <label className="block mb-2 text-sm font-medium text-gray-700">Banner 圖片</label>
+                      <ImageUploader
+                        value={areas?.ordersBanner?.image || ''}
+                        onChange={(url) => {
+                          updateArea(['ordersBanner','image'], url);
+                          setUploadError(null);
+                        }}
+                        onUploadingChange={handleUploadingChange}
+                        onError={(err) => setUploadError(`我的訂單 Banner 圖片上傳失敗: ${err}`)}
+                        className="w-full"
+                        folder="app_images"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">建議尺寸: 800x200px 或更高解析度（與長型 Banner 相同尺寸）</p>
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard 
+                title="付款方式" 
+                isExpanded={expandedSections.mobilePaymentMethods}
+                onToggle={() => setExpandedSections(prev => ({ ...prev, mobilePaymentMethods: !prev.mobilePaymentMethods }))}
+              >
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600 mb-4">管理付款方式資訊，這些資訊將顯示在手機APP的購買點數頁面。</p>
+                    {Array.isArray(areas?.paymentMethods) && areas.paymentMethods.length > 0 ? (
+                      areas.paymentMethods.map((method: any, index: number) => (
+                        <div key={index} className="p-4 bg-gray-50 rounded-lg border mb-4 relative">
+                          <div className="flex justify-between items-center mb-3">
+                            <h5 className="text-sm font-medium">付款方式 {index + 1}</h5>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newMethods = [...(areas.paymentMethods || [])];
+                                newMethods.splice(index, 1);
+                                updateArea(['paymentMethods'], newMethods);
+                              }}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium"
+                            >
+                              刪除
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-4">
+                            <TextField
+                              label="付款方式名稱"
+                              value={method?.name || ''}
+                              onChange={(v) => {
+                                const newMethods = [...(areas.paymentMethods || [])];
+                                newMethods[index] = { ...newMethods[index], name: v };
+                                updateArea(['paymentMethods'], newMethods);
+                              }}
+                              placeholder="例如: FPS 轉數快"
+                            />
+                            <TextField
+                              label="帳號/號碼"
+                              value={method?.number || ''}
+                              onChange={(v) => {
+                                const newMethods = [...(areas.paymentMethods || [])];
+                                newMethods[index] = { ...newMethods[index], number: v };
+                                updateArea(['paymentMethods'], newMethods);
+                              }}
+                              placeholder="例如: 106 280 399"
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 bg-gray-50 rounded-lg border mb-4 text-center text-gray-500 text-sm">
+                        目前沒有付款方式，請點擊下方按鈕新增。
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentMethods = Array.isArray(areas?.paymentMethods) ? areas.paymentMethods : [];
+                        updateArea(['paymentMethods'], [...currentMethods, { name: '', number: '' }]);
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                    >
+                      + 新增付款方式
+                    </button>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          ) : slug === 'footer' ? (
+            <div className="space-y-6">
+              <SectionCard
+                title="公司資訊"
+                isExpanded={expandedSections.footerCompany}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({ ...prev, footerCompany: !prev.footerCompany }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="公司名稱"
+                    value={areas?.company?.name || ''}
+                    onChange={(v) => updateArea(['company', 'name'], v)}
+                    placeholder="iFoodPulse"
+                  />
+                  <TextArea
+                    label="公司描述"
+                    value={areas?.company?.description || ''}
+                    onChange={(v) => updateArea(['company', 'description'], v)}
+                    placeholder="Premium food supplier platform for restaurants..."
+                  />
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="快速連結"
+                isExpanded={expandedSections.footerQuickLinks}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({
+                    ...prev,
+                    footerQuickLinks: !prev.footerQuickLinks,
+                  }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.quickLinks?.heading || ''}
+                    onChange={(v) => updateArea(['quickLinks', 'heading'], v)}
+                    placeholder="快速連結"
+                  />
+                  <div className="space-y-4">
+                    {['link1', 'link2', 'link3', 'link4', 'link5'].map((key, index) => (
+                      <div key={key} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                        <h5 className="text-sm font-medium text-gray-700">連結 {index + 1}</h5>
+                        <TextField
+                          label="連結標題"
+                          value={areas?.quickLinks?.[key]?.label || ''}
+                          onChange={(v) => updateArea(['quickLinks', key, 'label'], v)}
+                          placeholder="請輸入連結標題"
+                        />
+                        <TextField
+                          label="連結網址"
+                          value={areas?.quickLinks?.[key]?.url || ''}
+                          onChange={(v) => updateArea(['quickLinks', key, 'url'], v)}
+                          placeholder="/products"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="聯絡資訊"
+                isExpanded={expandedSections.footerContact}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({
+                    ...prev,
+                    footerContact: !prev.footerContact,
+                  }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextField
+                    label="區塊標題"
+                    value={areas?.contact?.title || ''}
+                    onChange={(v) => updateArea(['contact', 'title'], v)}
+                    placeholder="聯絡資訊"
+                  />
+                  <TextField
+                    label="地址"
+                    value={areas?.contact?.address || ''}
+                    onChange={(v) => updateArea(['contact', 'address'], v)}
+                    placeholder="香港九龍彌敦道700"
+                  />
+                  <TextField
+                    label="電話"
+                    value={areas?.contact?.phone || ''}
+                    onChange={(v) => updateArea(['contact', 'phone'], v)}
+                    placeholder="(852) 9890-9890"
+                  />
+                  <TextField
+                    label="電子郵件"
+                    value={areas?.contact?.email || ''}
+                    onChange={(v) => updateArea(['contact', 'email'], v)}
+                    placeholder="info@ifoodpulse.com"
+                  />
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="底部資訊"
+                isExpanded={expandedSections.footerBottom}
+                onToggle={() =>
+                  setExpandedSections((prev) => ({
+                    ...prev,
+                    footerBottom: !prev.footerBottom,
+                  }))
+                }
+              >
+                <div className="grid grid-cols-1 gap-4">
+                  <TextArea
+                    label="版權文字"
+                    value={areas?.bottom?.copyright || ''}
+                    onChange={(v) => updateArea(['bottom', 'copyright'], v)}
+                    placeholder="© 2025 iFoodPulse 保留所有權利。"
+                  />
+                  <div className="space-y-4">
+                    {['link1', 'link2', 'link3'].map((key, index) => (
+                      <div key={key} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                        <h5 className="text-sm font-medium text-gray-700">底部連結 {index + 1}</h5>
+                        <TextField
+                          label="連結標題"
+                          value={areas?.bottom?.links?.[key]?.label || ''}
+                          onChange={(v) => updateArea(['bottom', 'links', key, 'label'], v)}
+                          placeholder="請輸入底部連結標題"
+                        />
+                        <TextField
+                          label="連結網址"
+                          value={areas?.bottom?.links?.[key]?.url || ''}
+                          onChange={(v) => updateArea(['bottom', 'links', key, 'url'], v)}
+                          placeholder="/privacy"
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
               </SectionCard>
@@ -1545,7 +3540,7 @@ function defaultAboutAreas() {
       title: '準備好開始合作了嗎？',
       description: '加入我們的客戶網絡，享受專業的食材供應服務',
       button1Text: '立即註冊',
-      button1Link: '/register',
+      button1Link: '/partners/apply',
       button2Text: '聯絡我們',
       button2Link: '/contact',
     },
@@ -1639,82 +3634,68 @@ function defaultContactAreas() {
 function defaultPricingAreas() {
   return {
     hero: {
-      title: '選擇您的會員方案',
-      description: '加入數千個信任食品供應商專業版進行食品供應需求的餐廳。所有方案均包含年度計費，無隱藏費用。',
+      title: '會員點數方案',
+      description: '透過購買會員點數，快速補充貨品採購所需的預付餘額。每一點會員點數等同港幣，可在平台上立即使用。',
     },
     plans: {
       plan1: {
-        name: '基本方案',
-        description: '適合小型餐廳',
-        price: '999',
-        originalPrice: '1299',
+        name: 'HK$500 方案',
+        description: '適合首次補貨或測試平台使用',
+        price: '500',
+        originalPrice: '適合首次補貨',
         features: [
-          '存取所有產品',
-          '標準配送 (48-72小時)',
-          '電子郵件支援',
-          '訂單追蹤',
-          '基本分析',
-          '每月最多50筆訂單',
+          '一次購買 500 點會員點數',
+          '點數審核通過即時入帳',
+          '支援平台內所有品項',
         ],
       },
       plan2: {
-        name: '專業方案',
-        description: '適合成長中的餐廳',
-        price: '1999',
-        originalPrice: '2499',
+        name: 'HK$1,000 方案',
+        description: '適合穩定每週補貨的餐廳',
+        price: '1000',
+        originalPrice: '適合每週例行採購',
         features: [
-          '包含基本方案所有功能',
-          '優先配送 (24-48小時)',
-          '電話和電子郵件支援',
-          '進階分析',
-          '無限制訂單',
-          '大量訂購折扣',
-          '自訂配送排程',
-          '專屬客戶經理',
+          '建議每週例行採購的預算',
+          '支援多筆訂單與分店使用',
+          '享有點數回饋與專人支援',
         ],
       },
       plan3: {
-        name: '高級方案',
-        description: '適合大型餐廳連鎖',
-        price: '3999',
-        originalPrice: '4999',
+        name: 'HK$3,000 方案',
+        description: '適合集中採購或多分店營運',
+        price: '3000',
+        originalPrice: '支援多分店共同使用',
         features: [
-          '包含專業方案所有功能',
-          '當日配送服務',
-          '24/7優先支援',
-          '客製化產品採購',
-          '進階庫存管理',
-          '多據點支援',
-          '白標訂購系統',
-          'API存取',
-          '客製化整合',
+          '一次補充大量採購額度',
+          '點數餘額可隨時查詢與共享',
+          '專員協助採購與物流安排',
         ],
       },
     },
     faq: {
       q1: {
-        question: '我可以取消我的會員資格嗎？',
-        answer: '是的，您可以隨時取消您的會員資格。您的存取權限將持續到當前計費期結束。',
+        question: '點數如何購買與使用？',
+        answer: '登入帳戶後前往「購買點數」，選擇方案並匯款，上傳收據後待審核通過，點數即會入帳供下單使用。',
       },
       q2: {
-        question: '有免費試用嗎？',
-        answer: '我們為所有新會員提供14天免費試用。開始試用無需信用卡。',
+        question: '點數可以共享或轉移嗎？',
+        answer: '同一公司底下的授權帳號都可以共用點數餘額，方便管理採購預算與分店需求。',
       },
       q3: {
-        question: '您接受哪些付款方式？',
-        answer: '我們接受所有主要信用卡、金融卡和銀行轉帳。所有付款都通過Stripe安全處理。',
+        question: '審核需要多久時間？',
+        answer: '我們的專員會在收到收據後 1-2 個工作日內完成審核並啟用點數。',
       },
       q4: {
-        question: '我可以升級或降級我的方案嗎？',
-        answer: '是的，您可以隨時升級或降級您的方案。變更將根據您當前的計費週期按比例計算。',
+        question: '未使用的點數會過期嗎？',
+        answer: '會員點數不會過期，可在需要時隨時使用。如需退款，請聯絡客戶服務團隊。',
       },
     },
     cta: {
-      title: '準備開始了嗎？',
-      description: '加入數千個信任食品供應商專業版的餐廳',
-      button1Text: '開始免費試用',
-      button2Text: '聯繫銷售',
-      button2Link: '/contact',
+      title: '準備好補充會員點數了嗎？',
+      description: '登入會員即可在「購買點數」頁面提交收據，快速完成點數儲值並開始採購。',
+      button1Text: '前往購買點數',
+      button2Text: '了解使用流程',
+      button2Link: '/partners/apply',
     },
   };
 }
@@ -1722,80 +3703,127 @@ function defaultPricingAreas() {
 function defaultPartnersAreas() {
   return {
     hero: {
-      title: '成為我們的合作夥伴',
-      description: '與高質食品供應商攜手合作，共同打造香港最優質的餐廳食品供應平台',
+      title: '餐廳食材採購，一站式完成',
+      description: 'iFoodPulse 食材採購平台，讓餐廚團隊可以在數分鐘內完成補貨、掌握成本，並獲得專人支援與點數回饋。',
       button1Text: '立即申請合作',
-      button2Text: '了解更多',
+      button2Text: '了解平台優勢',
     },
     benefits: {
-      title: '合作優勢',
-      description: '加入我們的合作夥伴網絡，享受專業支援和業務增長機會',
+      title: '餐廳專屬採購優勢',
+      description: '我們整合熱門食材、耗材與飲品供應商，並透過點數結帳與補貨提醒，協助餐廳團隊減少溝通成本、專注料理品質。',
       benefit1: {
-        title: '業務增長',
-        description: '透過我們的平台擴大您的業務範圍，接觸更多餐廳客戶',
+        title: '一鍵補貨，節省時間',
+        description: '集中管理常用食材清單，快速加入購物車即可完成補貨，免去逐一聯絡供應商的麻煩。',
       },
       benefit2: {
-        title: '信譽保障',
-        description: '與知名食品供應商合作，提升您的品牌信譽和市場地位',
+        title: '透明價格與點數結帳',
+        description: '平台提供即時價格與點數結帳功能，協助餐廳掌握採購預算並享受回饋方案。',
       },
       benefit3: {
-        title: '市場擴展',
-        description: '進入香港及周邊地區的餐廳市場，擴大您的業務版圖',
+        title: '多品類食材一次搞定',
+        description: '從新鮮食材、乾貨到調味配料，餐廳可以在同一平台完成採購，降低庫存壓力。',
       },
       benefit4: {
-        title: '專業支援',
-        description: '獲得專業的業務支援和技術指導，確保合作順利進行',
+        title: '營運數據與提醒',
+        description: '系統提供採購紀錄、常用品項提醒與即將缺貨通知，協助廚房穩定運作。',
       },
     },
     partnershipTypes: {
-      title: '合作類型',
-      description: '我們提供多種合作模式，滿足不同類型的合作夥伴需求',
+      title: '量身打造的採購體驗',
+      description: '登入後即可查看常用食材與採購提醒，流程清楚快速，支援多分店協作與權限管理。',
       type1: {
-        title: '供應商合作',
-        description: '成為我們的優質供應商，為餐廳提供新鮮優質的食材',
-        features: ['產品展示', '訂單管理', '物流支援', '品質保證'],
+        title: '個人化主頁',
+        description: '登入後立即看到餐廳常用食材與優惠資訊，支援多分店切換與快速補貨。',
+        features: ['常用品項即時顯示', '依菜單推薦採購項目', '支援多店面切換'],
       },
       type2: {
-        title: '配送夥伴',
-        description: '加入我們的配送網絡，為餐廳提供快速可靠的配送服務',
-        features: ['配送管理', '路線優化', '即時追蹤', '客戶服務'],
+        title: '直覺式下單流程',
+        description: '快速搜尋品項、瀏覽圖片與規格說明，系統自動計算點數與金額，三分鐘內完成結帳。',
+        features: ['快速搜尋與圖片比對', '收藏與常用清單一鍵補貨', '自動計算點數與金額'],
       },
     },
     requirements: {
-      title: '合作要求',
-      description: '我們尋求具有專業能力和良好信譽的合作夥伴，共同為餐廳提供優質服務',
+      title: '申請條件',
+      description: '我們尋求具有專業能力和良好信譽的餐廳合作夥伴，攜手提升採購效率與用餐體驗。',
       requirementsList: [
-        '具有相關行業經驗和專業資質',
-        '提供優質的產品或服務',
-        '遵守行業標準和法規要求',
-        '具備良好的商業信譽和財務狀況',
-        '願意與我們長期合作共同發展',
+        '註冊公司並持有有效的餐飲相關營業或食品處理牌照',
+        '同意遵守平台採購與支付規範，維護良好交易信用',
+        '提供餐廳基本資料與聯絡方式，以便平台確認會員資格',
+        '願意配合平台的點數與結帳機制，享受整合採購服務',
+        '致力於長期合作與營運成長，共同提升用餐體驗',
       ],
-      processTitle: '申請流程',
+      processTitle: '加入流程',
       step1: {
         title: '提交申請',
-        description: '填寫合作申請表單',
+        description: '填寫餐廳與採購需求資訊，建立平台帳戶。',
       },
       step2: {
         title: '資格審核',
-        description: '我們會審核您的申請資料',
+        description: '專員確認餐廳營運資料並完成會員驗證。',
       },
       step3: {
-        title: '面談協商',
-        description: '進行詳細的合作討論',
+        title: '開始採購',
+        description: '登入平台挑選食材、使用點數結帳並追蹤訂單。',
       },
       step4: {
-        title: '簽約合作',
-        description: '正式建立合作關係',
+        title: '長期合作',
+        description: '與專員保持聯繫，持續優化採購流程與營運效率。',
       },
     },
     cta: {
-      title: '準備好成為我們的合作夥伴了嗎？',
-      description: '立即提交您的合作申請，與我們攜手打造香港最優質的餐廳食品供應平台',
+      title: '準備好加入 iFoodPulse 嗎？',
+      description: '立即提交申請，讓我們的團隊協助您加速採購流程、提升餐廳營運效率。',
       button1Text: '立即申請合作',
-      button2Text: '下載合作資料',
+      button2Text: '預約顧問諮詢',
     },
   };
+}
+
+function defaultFaqAreas() {
+  return {
+    hero: {
+      title: 'F&Q',
+      description: '常見問題解答',
+    },
+    faq: [
+      {
+        question: '如何成為會員？',
+        answer: '您可以前往「成為會員」頁面，選擇適合的點數方案並完成註冊。註冊後即可開始使用我們的服務。',
+      },
+      {
+        question: '點數如何購買？',
+        answer: '登入後，前往「會員點數」頁面，選擇您需要的點數方案並完成付款。我們支援多種付款方式。',
+      },
+      {
+        question: '配送時間需要多久？',
+        answer: '一般訂單會在24-48小時內送達。具體配送時間會根據您的地址和訂單內容而定，您可以在下單時查看預計配送時間。',
+      },
+      {
+        question: '如何追蹤訂單？',
+        answer: '登入後，前往「我的訂單」頁面即可查看所有訂單狀態。您也可以查看訂單詳情以獲取配送資訊。',
+      },
+      {
+        question: '可以退換貨嗎？',
+        answer: '我們提供7天退換貨服務。如產品有品質問題，請聯繫客服，我們會為您處理退換貨事宜。',
+      },
+      {
+        question: '如何聯繫客服？',
+        answer: '您可以透過「聯絡我們」頁面填寫表單，或直接撥打客服熱線。我們的客服團隊會盡快為您處理。',
+      },
+      {
+        question: '產品品質如何保證？',
+        answer: '我們嚴格篩選供應商，所有產品都經過品質檢驗。我們只提供符合最高標準的優質食材。',
+      },
+      {
+        question: '有最低訂購金額嗎？',
+        answer: '部分產品可能有最低訂購數量要求，具體請查看產品詳情頁面。我們會清楚標示最低訂購要求。',
+      },
+    ],
+  };
+}
+
+function defaultFooterAreas() {
+  return getDefaultFooterAreas();
 }
 
 function defaultMobileAppAreas() {
@@ -1866,37 +3894,37 @@ function defaultMobileAppAreas() {
         color: '#10B981',
       },
       category2: {
-        title: '餐廳工程',
+        title: '商業維修',
         icon: 'construct-outline',
         color: '#3B82F6',
       },
       category3: {
-        title: '餐廳傢具',
+        title: '廚房設備',
         icon: 'bed-outline',
         color: '#8B5CF6',
       },
       category4: {
-        title: '廚房設備',
+        title: '餐碟餐具',
         icon: 'hardware-chip-outline',
         color: '#F59E0B',
       },
       category5: {
-        title: '宣傳',
+        title: '傢俬訂製',
         icon: 'megaphone-outline',
         color: '#EF4444',
       },
       category6: {
-        title: '餐碟餐具',
+        title: '廣告宣傳',
         icon: 'restaurant-outline',
         color: '#06B6D4',
       },
       category7: {
-        title: '餐飲維修',
+        title: '系統保安',
         icon: 'construct-outline',
         color: '#8B5A2B',
       },
       category8: {
-        title: '餐飲系統',
+        title: '商業工程',
         icon: 'laptop-outline',
         color: '#9C27B0',
       },
@@ -1910,9 +3938,9 @@ function defaultHomepageAreas() {
       bannerImageUrl: '',
       title: '為餐廳提供優質食品供應',
       titleSpan: '餐廳',
-      description: '透過我們的年度會員計劃，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
+      description: '透過iFoodPulse，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
       button1Text: '開始您的會員資格',
-      button1Link: '/register',
+      button1Link: '/partners/apply',
       button2Text: '瀏覽產品',
       button2Link: '/products',
     },
@@ -1967,13 +3995,568 @@ function defaultHomepageAreas() {
       title: '準備好改變您的餐廳了嗎？',
       description: '今天就加入我們的會員計劃，開始享受優質食品供應服務。',
       button1Text: '開始免費試用',
-      button1Link: '/register',
+      button1Link: '/partners/apply',
       button2Text: '查看價格',
       button2Link: '/pricing',
     },
     seo: {
       title: '首頁 - FoodSupplier',
       description: 'FoodSupplier 提供餐飲採購一站式解決方案。',
+    },
+  };
+}
+
+function defaultRestaurantConstructionAreas() {
+  return {
+    hero: {
+      title: '專業餐廳工程服務',
+      description: '從設計規劃到施工完成，提供全方位的餐廳工程解決方案',
+      button1Text: '免費諮詢',
+      button2Text: '查看案例',
+    },
+    services: {
+      title: '服務項目',
+      description:
+        '我們提供完整的餐廳工程服務，從設計到施工，確保每個環節都達到專業標準',
+      items: [
+        {
+          title: '餐廳設計規劃',
+          description: '專業的餐廳空間設計，從概念到實作全程服務',
+        },
+        {
+          title: '廚房設備安裝',
+          description: '專業廚房設備安裝與配置，確保高效運作',
+        },
+        {
+          title: '水電工程',
+          description: '餐廳專用水電系統設計與安裝',
+        },
+        {
+          title: '空調通風系統',
+          description: '專業空調與通風系統安裝，確保舒適環境',
+        },
+        {
+          title: '消防系統',
+          description: '符合法規的消防系統設計與安裝',
+        },
+        {
+          title: '裝修工程',
+          description: '室內裝修、地板、牆面等整體裝修服務',
+        },
+      ],
+    },
+    features: {
+      title: '服務特色',
+      description: '我們致力於為客戶提供最優質的工程服務，確保每個項目都能完美完成',
+      items: [
+        {
+          title: '專業團隊',
+          description: '擁有豐富餐廳工程經驗的專業團隊',
+        },
+        {
+          title: '品質保證',
+          description: '使用優質材料，提供品質保證',
+        },
+        {
+          title: '快速施工',
+          description: '高效施工流程，縮短營業中斷時間',
+        },
+        {
+          title: '售後服務',
+          description: '完善的售後服務與維護保養',
+        },
+      ],
+    },
+    contact: {
+      title: '立即諮詢',
+      description:
+        '專業團隊為您提供免費諮詢與報價服務，讓我們為您的餐廳工程提供最佳解決方案',
+      button1Text: '聯絡我們',
+      button2Text: '免費報價',
+    },
+  };
+}
+
+function defaultRestaurantFurnitureAreas() {
+  return {
+    hero: {
+      title: '專業餐廳傢具',
+      description: '提供各式餐廳傢具，打造舒適優雅的用餐環境',
+      button1Text: '免費諮詢',
+      button2Text: '預約參觀',
+    },
+    categories: {
+      title: '傢具類別',
+      description: '點擊查看詳細資訊，我們提供多種傢具類別滿足不同需求',
+      items: [
+        {
+          title: '餐桌椅組合',
+          description: '各式餐桌椅組合，適合不同餐廳風格',
+          priceRange: 'HKD$ 2,000 - 15,000',
+        },
+        {
+          title: '沙發座椅',
+          description: '舒適的沙發座椅，提升用餐體驗',
+          priceRange: 'HKD$ 3,000 - 25,000',
+        },
+        {
+          title: '收納櫃',
+          description: '實用的收納櫃，保持餐廳整潔',
+          priceRange: 'HKD$ 1,500 - 12,000',
+        },
+        {
+          title: '吧台設備',
+          description: '專業吧台設備，打造完美酒吧區',
+          priceRange: 'HKD$ 5,000 - 30,000',
+        },
+        {
+          title: '裝飾傢具',
+          description: '精美裝飾傢具，營造餐廳氛圍',
+          priceRange: 'HKD$ 800 - 8,000',
+        },
+        {
+          title: '戶外傢具',
+          description: '耐用戶外傢具，適合露天用餐區',
+          priceRange: 'HKD$ 2,500 - 20,000',
+        },
+      ],
+    },
+    services: {
+      title: '服務特色',
+      description: '提供客製化設計、專業安裝、品質保證與完善售後服務',
+      items: [
+        {
+          title: '客製化設計',
+          description: '根據餐廳風格提供客製化傢具設計',
+          features: ['免費設計諮詢', '3D效果圖', '材質選擇', '尺寸客製'],
+        },
+        {
+          title: '專業安裝',
+          description: '專業團隊提供傢具安裝服務',
+          features: ['免費安裝', '現場組裝', '品質檢查', '使用指導'],
+        },
+        {
+          title: '品質保證',
+          description: '使用優質材料，提供品質保證',
+          features: ['原廠保固', '品質認證', '售後服務', '維修保養'],
+        },
+        {
+          title: '售後服務',
+          description: '完善的售後服務與維護保養',
+          features: ['定期保養', '故障維修', '零件更換', '技術支援'],
+        },
+      ],
+    },
+    contact: {
+      title: '立即諮詢',
+      description: '專業團隊為您提供傢具諮詢與報價服務',
+      button1Text: '聯絡我們',
+      button2Text: '預約參觀',
+    },
+  };
+}
+
+function defaultKitchenEquipmentAreas() {
+  return {
+    hero: {
+      title: '專業廚房設備',
+      description: '提供全套廚房設備解決方案，提升餐廳營運效率',
+      button1Text: '免費諮詢',
+      button2Text: '查看設備',
+    },
+    categories: {
+      title: '設備類別',
+      description: '我們提供多種廚房設備類別，滿足不同餐廳的需求',
+      items: [
+        {
+          title: '烹飪設備',
+          description: '專業烹飪設備，提升廚房效率',
+          items: ['爐具', '烤箱', '蒸籠', '炸鍋', '烤架', '平底鍋'],
+        },
+        {
+          title: '冷藏設備',
+          description: '高效冷藏設備，保持食材新鮮',
+          items: ['冰箱', '冷凍櫃', '冷藏櫃', '製冰機', '冷卻器', '保鮮櫃'],
+        },
+        {
+          title: '清潔設備',
+          description: '專業清潔設備，確保衛生標準',
+          items: ['洗碗機', '消毒櫃', '清潔機', '烘乾機', '洗滌槽', '清潔劑'],
+        },
+        {
+          title: '切配設備',
+          description: '高效切配設備，提升備料效率',
+          items: ['切菜機', '攪拌機', '榨汁機', '切片機', '絞肉機', '攪拌器'],
+        },
+        {
+          title: '烘焙設備',
+          description: '專業烘焙設備，製作精美糕點',
+          items: ['烤箱', '發酵箱', '攪拌機', '壓麵機', '模具', '烘焙工具'],
+        },
+        {
+          title: '通風設備',
+          description: '高效通風設備，保持廚房空氣清新',
+          items: ['抽油煙機', '排風扇', '通風管', '空氣淨化器', '風扇', '通風系統'],
+        },
+      ],
+    },
+    services: {
+      title: '服務項目',
+      description: '我們提供完整的廚房設備服務，確保設備正常運作',
+      items: [
+        {
+          title: '專業安裝',
+          description: '專業技術團隊提供設備安裝服務',
+        },
+        {
+          title: '定期維護',
+          description: '定期維護保養，確保設備正常運作',
+        },
+        {
+          title: '技術支援',
+          description: '24小時技術支援與故障排除',
+        },
+        {
+          title: '零件供應',
+          description: '原廠零件供應，確保設備品質',
+        },
+      ],
+    },
+    features: {
+      title: '設備特色',
+      description: '我們的設備具有多項特色，為您的餐廳帶來更多價值',
+      items: [
+        {
+          title: '節能環保',
+          description: '採用節能技術，降低營運成本',
+        },
+        {
+          title: '安全可靠',
+          description: '符合安全標準，保障使用安全',
+        },
+        {
+          title: '高效運作',
+          description: '提升廚房工作效率',
+        },
+        {
+          title: '易於操作',
+          description: '人性化設計，操作簡單方便',
+        },
+      ],
+    },
+    contact: {
+      title: '立即諮詢',
+      description: '專業團隊為您提供廚房設備諮詢與報價服務',
+      button1Text: '聯絡我們',
+      button2Text: '免費報價',
+    },
+  };
+}
+
+function defaultPromotionAreas() {
+  return {
+    hero: {
+      title: '餐廳宣傳服務',
+      description: '專業行銷團隊為您的餐廳提供全方位宣傳解決方案',
+      button1Text: '免費諮詢',
+      button2Text: '查看案例',
+    },
+    promotionServices: {
+      title: '宣傳服務',
+      description: '點擊查看詳細資訊，我們提供多種宣傳服務滿足不同需求',
+      items: [
+        {
+          title: '數位行銷',
+          description: '全方位的數位行銷解決方案',
+          items: ['社群媒體管理', 'Google廣告', 'Facebook廣告', 'Instagram行銷', 'LINE官方帳號', '網站優化'],
+          priceRange: 'HKD$ 3,000 - 15,000/月',
+          popular: true,
+          features: ['數據分析', 'A/B測試', 'ROI追蹤', '24/7監控'],
+        },
+        {
+          title: '傳統廣告',
+          description: '傳統媒體廣告投放服務',
+          items: ['報紙廣告', '雜誌廣告', '廣播廣告', '電視廣告', '戶外看板', '傳單設計'],
+          priceRange: 'HKD$ 5,000 - 50,000/次',
+          popular: false,
+          features: ['媒體規劃', '創意設計', '投放執行', '效果評估'],
+        },
+        {
+          title: '活動策劃',
+          description: '專業活動策劃與執行',
+          items: ['開幕活動', '節慶活動', '促銷活動', '品嚐會', '記者會', '展覽活動'],
+          priceRange: 'HKD$ 10,000 - 100,000/場',
+          popular: true,
+          features: ['全程策劃', '現場執行', '媒體邀請', '效果追蹤'],
+        },
+        {
+          title: '品牌設計',
+          description: '完整的品牌形象設計',
+          items: ['Logo設計', '名片設計', '菜單設計', '包裝設計', '店面設計', '制服設計'],
+          priceRange: 'HKD$ 2,000 - 20,000/項',
+          popular: true,
+          features: ['品牌策略', '視覺設計', '應用規範', '品牌手冊'],
+        },
+        {
+          title: '內容創作',
+          description: '專業內容創作與製作',
+          items: ['美食攝影', '影片製作', '文案撰寫', '產品介紹', '故事行銷', '內容企劃'],
+          priceRange: 'HKD$ 1,500 - 8,000/項',
+          popular: false,
+          features: ['專業攝影', '後製剪輯', '文案創作', '多平台發布'],
+        },
+        {
+          title: '公關服務',
+          description: '專業公關與媒體關係',
+          items: ['媒體關係', '新聞發布', '危機處理', '口碑管理', 'KOL合作', '網紅行銷'],
+          priceRange: 'HKD$ 8,000 - 30,000/月',
+          popular: false,
+          features: ['媒體監測', '危機預警', 'KOL配對', '效果報告'],
+        },
+      ],
+    },
+    services: {
+      title: '服務特色',
+      description: '我們提供全方位的宣傳服務，從策略到執行，確保最佳效果',
+      items: [
+        {
+          title: '策略規劃',
+          description: '根據餐廳特色制定專屬行銷策略',
+          features: ['市場分析', '競爭分析', '目標設定', '策略制定'],
+        },
+        {
+          title: '創意設計',
+          description: '專業設計團隊提供創意視覺設計',
+          features: ['視覺設計', '創意企劃', '品牌識別', '多媒體製作'],
+        },
+        {
+          title: '數據分析',
+          description: '詳細數據分析，優化行銷效果',
+          features: ['數據收集', '效果分析', '優化建議', '報告製作'],
+        },
+        {
+          title: '效果追蹤',
+          description: '持續追蹤行銷效果，調整策略',
+          features: ['效果監測', '策略調整', '績效報告', '持續優化'],
+        },
+      ],
+    },
+    contact: {
+      title: '立即諮詢',
+      description: '專業行銷團隊為您提供免費諮詢與方案規劃',
+      button1Text: '聯絡我們',
+      button2Text: '預約會議',
+    },
+  };
+}
+
+function defaultDishesTablewareAreas() {
+  return {
+    hero: {
+      title: '專業餐碟餐具',
+      description:
+        '提升用餐體驗，展現餐廳品味，提供多款高品質餐碟餐具選擇。',
+    },
+    categories: {
+      title: '產品分類',
+      description:
+        '我們提供多種餐碟餐具產品，從基本款到高級款一應俱全。',
+      items: [
+        {
+          title: '餐具套裝',
+          description: '精美餐具套裝，提升用餐體驗',
+          priceRange: 'HKD$ 200 - 2,000',
+          items: ['陶瓷餐具', '骨瓷餐具', '不鏽鋼餐具', '木製餐具', '竹製餐具'],
+          popular: true,
+        },
+        {
+          title: '玻璃器皿',
+          description: '高品質玻璃器皿，透明美觀',
+          priceRange: 'HKD$ 50 - 800',
+          items: ['酒杯', '水杯', '咖啡杯', '茶具', '玻璃碗', '玻璃盤'],
+          popular: true,
+        },
+        {
+          title: '廚房用具',
+          description: '實用廚房用具，提升烹飪效率',
+          priceRange: 'HKD$ 100 - 1,500',
+          items: ['刀具', '砧板', '鍋具', '鏟子', '勺子', '量杯'],
+          popular: false,
+        },
+        {
+          title: '餐桌用品',
+          description: '精美餐桌用品，營造用餐氛圍',
+          priceRange: 'HKD$ 30 - 500',
+          items: ['桌布', '餐墊', '餐巾', '花瓶', '蠟燭', '裝飾品'],
+          popular: false,
+        },
+        {
+          title: '清潔用品',
+          description: '專業清潔用品，保持餐具衛生',
+          priceRange: 'HKD$ 20 - 200',
+          items: ['洗碗精', '清潔劑', '消毒液', '抹布', '海綿', '刷子'],
+          popular: false,
+        },
+        {
+          title: '儲存用品',
+          description: '實用儲存用品，保持餐具整潔',
+          priceRange: 'HKD$ 50 - 800',
+          items: ['餐具盒', '保鮮盒', '密封罐', '收納架', '餐具櫃', '防塵罩'],
+          popular: false,
+        },
+      ],
+    },
+    services: {
+      title: '服務特色',
+      items: [
+        {
+          title: '客製化設計',
+          description: '根據餐廳風格提供客製化餐具設計',
+          features: ['免費設計諮詢', '品牌定制', '材質選擇', '尺寸客製'],
+        },
+        {
+          title: '品質保證',
+          description: '使用優質材料，提供品質保證',
+          features: ['原廠保固', '品質認證', '售後服務', '維修保養'],
+        },
+        {
+          title: '批量採購',
+          description: '提供批量採購優惠價格',
+          features: ['批量折扣', '免費配送', '庫存管理', '定期補貨'],
+        },
+        {
+          title: '售後服務',
+          description: '完善的售後服務與維護保養',
+          features: ['定期保養', '故障維修', '零件更換', '技術支援'],
+        },
+      ],
+    },
+    contact: {
+      title: '立即聯繫我們',
+      description: '專業團隊為您提供最優質的服務',
+      button1Text: '聯絡我們',
+    },
+  };
+}
+
+function defaultRestaurantMaintenanceAreas() {
+  return {
+    hero: {
+      title: '專業餐飲維修',
+      description: '24小時服務，快速解決問題，確保餐廳營運不中斷。',
+    },
+    categories: {
+      title: '維修服務',
+      items: [
+        {
+          title: '設備維修',
+          description: '專業設備維修服務，確保正常運作',
+          items: ['廚房設備', '空調系統', '冰箱維修', '爐具維修', '洗碗機維修'],
+        },
+        {
+          title: '水電維修',
+          description: '專業水電維修，解決各種水電問題',
+          items: ['水管維修', '電路維修', '燈具更換', '插座維修', '水龍頭維修'],
+        },
+        {
+          title: '清潔保養',
+          description: '專業清潔保養服務，保持環境衛生',
+          items: ['深度清潔', '設備保養', '管道清潔', '通風清潔', '定期保養'],
+        },
+        {
+          title: '傢具維修',
+          description: '專業傢具維修，延長使用壽命',
+          items: ['桌椅維修', '櫃子維修', '沙發維修', '門窗維修', '裝飾維修'],
+        },
+        {
+          title: '緊急維修',
+          description: '24小時緊急維修服務，快速解決問題',
+          items: ['緊急搶修', '故障排除', '應急處理', '臨時修復', '緊急支援'],
+        },
+      ],
+    },
+    features: {
+      title: '服務特色',
+      items: [
+        {
+          title: '24小時服務',
+          description: '提供24小時緊急維修服務',
+        },
+        {
+          title: '專業技術',
+          description: '擁有專業技術團隊和先進設備',
+        },
+        {
+          title: '原廠零件',
+          description: '使用原廠零件，確保維修品質',
+        },
+        {
+          title: '合理價格',
+          description: '提供合理透明的維修價格',
+        },
+      ],
+    },
+    contact: {
+      title: '立即聯繫我們',
+      description: '專業團隊為您提供最優質的維修服務，保持設備運作順暢。',
+      button1Text: '聯絡我們',
+    },
+  };
+}
+
+function defaultRestaurantSystemsAreas() {
+  return {
+    hero: {
+      title: '智能餐飲系統',
+      description:
+        '提升營運效率，優化客戶體驗，為餐廳提供一站式系統解決方案。',
+    },
+    categories: {
+      title: '系統服務',
+      items: [
+        {
+          title: '點餐系統',
+          description: '支援桌邊點餐與手機點餐，提升點餐效率。',
+        },
+        {
+          title: '收銀系統',
+          description: '整合多種付款方式，簡化結帳流程。',
+        },
+        {
+          title: '雲端報表',
+          description: '即時查看營運數據，掌握營收狀況。',
+        },
+        {
+          title: '會員系統',
+          description: '管理會員資料與點數，提升顧客忠誠度。',
+        },
+      ],
+    },
+    features: {
+      title: '服務特色',
+      items: [
+        {
+          title: '提升營運效率',
+          description: '透過系統整合，減少人手操作，降低出錯率。',
+        },
+        {
+          title: '優化客戶體驗',
+          description: '提供快速、準確的服務，提升顧客滿意度。',
+        },
+        {
+          title: '安全可靠',
+          description: '採用安全機制保護資料，符合相關法規。',
+        },
+        {
+          title: '彈性擴充',
+          description: '系統可依需求擴充模組，支援未來發展。',
+        },
+      ],
+    },
+    contact: {
+      title: '立即聯繫我們',
+      description: '專業團隊為您提供最優質的系統規劃與導入服務。',
+      button1Text: '聯絡我們',
     },
   };
 }
@@ -2038,7 +4621,7 @@ function TextArea(props: { label: string; value: string; onChange: (v: string) =
   );
 }
 
-function updateNested(obj: any, path: string[], value: any) {
+function updateNested(obj: any, path: (string | number)[], value: any) {
   const copy = { ...(obj || {}) };
   let cur = copy;
   for (let i = 0; i < path.length - 1; i++) {

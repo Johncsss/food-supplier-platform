@@ -43,7 +43,8 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
           quantity: 1,
           unitPrice: action.payload.price,
           totalPrice: action.payload.price,
-          imageUrl: action.payload.imageUrl
+          imageUrl: action.payload.imageUrl,
+          unit: action.payload.unit
         };
         
         return {
@@ -125,6 +126,7 @@ interface CartContextType {
   addToCart: (product: Product) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
+  getItemQuantity: (productId: string) => number;
   clearCart: () => void;
 }
 
@@ -151,9 +153,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const existingSupplier = state.items[0].supplier;
       if (product.supplier !== existingSupplier) {
         Alert.alert(
-          'Cannot Add to Cart',
-          `It's only allowed to add the same supplier products into the shopping cart. Please clear the items in the shopping cart before adding different supplier products into the shopping cart.`,
-          [{ text: 'OK' }]
+          '無法加入購物車',
+          '購物車僅能加入同一供應商的產品。請先清空購物車，再新增其他供應商的產品。',
+          [{ text: '好的' }]
         );
         return;
       }
@@ -168,6 +170,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateQuantity = (productId: string, quantity: number) => {
     dispatch({ type: 'UPDATE_QUANTITY', payload: { productId, quantity } });
+  };
+
+  const getItemQuantity = (productId: string): number => {
+    const item = state.items.find(item => item.productId === productId);
+    return item ? item.quantity : 0;
   };
 
   const clearCart = () => {
@@ -210,6 +217,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addToCart,
     removeFromCart,
     updateQuantity,
+    getItemQuantity,
     clearCart
   };
 

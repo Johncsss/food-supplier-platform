@@ -39,7 +39,7 @@ export default function SalesPersonProfilePage() {
   const params = useParams();
   const router = useRouter();
   const { signOut } = useAuth();
-  const salesName = decodeURIComponent(params.name as string);
+  const salesName = decodeURIComponent((params?.name as string) || '');
   
   const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'month' | 'year'>('month');
   const [selectedPeriodData, setSelectedPeriodData] = useState<SalesData | null>(null);

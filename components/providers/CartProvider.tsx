@@ -3,6 +3,10 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { CartItem } from '@/types';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/translate';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface CartState {
   items: CartItem[];
@@ -118,6 +122,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
 };
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { firebaseUser } = useAuth();
   const [state, dispatch] = useReducer(cartReducer, {
     items: [],
     totalItems: 0,
@@ -137,10 +142,66 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // If logged in, attempt to load cart from Firestore (server-authoritative)
+  useEffect(() => {
+    const loadFromFirestore = async () => {
+      if (!firebaseUser?.uid) return;
+      try {
+        const ref = doc(db, 'carts', firebaseUser.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          const items: CartItem[] = Array.isArray(data?.items) ? data.items : [];
+          if (items.length > 0) {
+            dispatch({ type: 'LOAD_CART', payload: items });
+            localStorage.setItem('cart', JSON.stringify(items));
+            return;
+          }
+        }
+        // Firestore cart empty – if local has items, sync them up
+        const saved = localStorage.getItem('cart');
+        if (saved) {
+          try {
+            const localItems: CartItem[] = JSON.parse(saved);
+            await setDoc(
+              doc(db, 'carts', firebaseUser.uid),
+              { items: localItems, updatedAt: new Date() },
+              { merge: true },
+            );
+          } catch (e) {
+            console.warn('Failed to sync local cart to Firestore:', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load cart from Firestore:', e);
+      }
+    };
+    loadFromFirestore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firebaseUser?.uid]);
+
   // Save cart to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('cart', JSON.stringify(state.items));
   }, [state.items]);
+
+  // Also persist to Firestore when logged in
+  useEffect(() => {
+    const persist = async () => {
+      if (!firebaseUser?.uid) return;
+      try {
+        await setDoc(
+          doc(db, 'carts', firebaseUser.uid),
+          { items: state.items, updatedAt: new Date() },
+          { merge: true },
+        );
+      } catch (e) {
+        // Soft-fail; keep localStorage as fallback
+        console.warn('Failed to persist cart to Firestore:', e);
+      }
+    };
+    persist();
+  }, [firebaseUser?.uid, state.items]);
 
   const addToCart = (item: Omit<CartItem, 'totalPrice'>) => {
     // Check if there are items in the cart
@@ -167,12 +228,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     dispatch({ type: 'ADD_ITEM', payload: item });
-    toast.success('Item added to cart');
+    toast.success(t('Item added to cart'));
   };
 
   const removeFromCart = (productId: string) => {
     dispatch({ type: 'REMOVE_ITEM', payload: productId });
-    toast.success('Item removed from cart');
+    toast.success('商品已從購物車移除');
   };
 
   const updateQuantity = (productId: string, quantity: number) => {

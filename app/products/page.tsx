@@ -4,23 +4,30 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
-import { Search, Filter, ShoppingCart, Star, Package, Plus, Minus } from 'lucide-react';
+import { Search, Filter, ShoppingCart, Star, Package, Plus, Minus, Heart } from 'lucide-react';
 import { Product, Category } from '@/shared/types';
 import { t } from '@/lib/translate';
 import { useCart } from '@/components/providers/CartProvider';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, setDoc } from 'firebase/firestore';
 import { categories as defaultCategories } from '@/shared/products';
+import { useAuth } from '@/components/providers/AuthProvider';
+import toast from 'react-hot-toast';
 
 export default function Products() {
   const router = useRouter();
   const { addToCart, getItemQuantity, updateQuantity, state } = useCart();
+  const { firebaseUser } = useAuth();
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>(defaultCategories);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('所有類別');
   const [sortBy, setSortBy] = useState('name');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 50;
 
   // Get category from URL parameter
   useEffect(() => {
@@ -96,6 +103,25 @@ export default function Products() {
     fetchData();
   }, []);
 
+  // Fetch user's favorites
+  useEffect(() => {
+    const fetchFavorites = async () => {
+      if (!firebaseUser?.uid) {
+        setFavoriteIds(new Set());
+        return;
+      }
+      try {
+        const favRef = collection(db, 'users', firebaseUser.uid, 'favorites');
+        const snap = await getDocs(favRef);
+        const ids = new Set<string>(snap.docs.map(d => d.id));
+        setFavoriteIds(ids);
+      } catch (err) {
+        console.error('Failed to load favorites', err);
+      }
+    };
+    fetchFavorites();
+  }, [firebaseUser?.uid]);
+
   const filteredProducts = products.filter((product: Product) => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -116,6 +142,26 @@ export default function Products() {
     }
   });
 
+  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / ITEMS_PER_PAGE));
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, sortBy, products.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentPage]);
+
+  const paginatedProducts = sortedProducts.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  );
+
   const handleAddToCart = (product: Product) => {
     addToCart({
       productId: product.id,
@@ -130,8 +176,43 @@ export default function Products() {
   };
 
   const handleQuantityChange = (product: Product, newQuantity: number) => {
-    if (newQuantity >= product.minOrderQuantity) {
+    if (newQuantity <= 0) {
+      updateQuantity(product.id, 0);
+      return;
+    }
+
+    if (newQuantity < product.minOrderQuantity) {
+      updateQuantity(product.id, 0);
+      return;
+    }
+
       updateQuantity(product.id, newQuantity);
+  };
+
+  const handleAddFavorite = async (product: Product) => {
+    if (!firebaseUser?.uid) {
+      toast.error('請先登入以加入收藏');
+      router.push('/login');
+      return;
+    }
+    if (favoriteIds.has(product.id)) {
+      return;
+    }
+    try {
+      const favRef = doc(db, 'users', firebaseUser.uid, 'favorites', product.id);
+      await setDoc(favRef, {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.imageUrl,
+        category: product.category,
+        createdAt: new Date(),
+      }, { merge: true });
+      setFavoriteIds(prev => new Set(prev).add(product.id));
+      toast.success('已加入收藏');
+    } catch (err) {
+      console.error('Failed to add favorite', err);
+      toast.error('加入收藏失敗');
     }
   };
 
@@ -218,7 +299,7 @@ export default function Products() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {sortedProducts.map((product) => {
+            {paginatedProducts.map((product) => {
             const cartQuantity = getItemQuantity(product.id);
             
             return (
@@ -267,7 +348,7 @@ export default function Products() {
                       <button
                         onClick={() => handleQuantityChange(product, cartQuantity - 1)}
                         className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-                        disabled={cartQuantity <= product.minOrderQuantity}
+                        disabled={cartQuantity <= 0}
                       >
                         <Minus className="w-4 h-4" />
                       </button>
@@ -286,13 +367,29 @@ export default function Products() {
                         handleAddToCart(product);
                       }}
                       disabled={!product.isAvailable || !!(cartCategory && product.category !== cartCategory)}
-                      className="w-full bg-primary-600 text-white py-2 px-4 rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                      className="w-full text-white py-2 px-4 rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-opacity flex items-center justify-center space-x-2 hover:opacity-90"
+                      style={{ backgroundColor: '#0B8628' }}
                       title={cartCategory && product.category !== cartCategory ? `只能選擇 ${cartCategory} 類別的產品` : ''}
                     >
                       <ShoppingCart className="w-4 h-4" />
                       <span>訂貨</span>
                     </button>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddFavorite(product);
+                    }}
+                    disabled={favoriteIds.has(product.id)}
+                    className={`w-full py-2 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 ${
+                      favoriteIds.has(product.id)
+                        ? 'border border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
+                        : 'border border-primary-200 text-primary-700 hover:bg-primary-50'
+                    }`}
+                  >
+                    <Heart className="w-4 h-4" />
+                    <span>{favoriteIds.has(product.id) ? '已收藏' : '加入收藏'}</span>
+                  </button>
                 </div>
 
                 <div className="mt-3 text-xs text-gray-500">
@@ -310,6 +407,38 @@ export default function Products() {
             <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">沒有找到產品</h3>
             <p className="text-gray-600">請嘗試調整搜尋條件或類別篩選。</p>
+          </div>
+        )}
+
+        {!loading && sortedProducts.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-8">
+            <p className="text-sm text-gray-600">
+              顯示第{' '}
+              <span className="font-medium">
+                {(currentPage - 1) * ITEMS_PER_PAGE + 1}-
+                {Math.min(currentPage * ITEMS_PER_PAGE, sortedProducts.length)}
+              </span>{' '}
+              筆，共 <span className="font-medium">{sortedProducts.length}</span> 筆產品
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                上一頁
+              </button>
+              <span className="text-sm text-gray-600">
+                第 <span className="font-semibold text-gray-900">{currentPage}</span> / {totalPages} 頁
+              </span>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                下一頁
+              </button>
+            </div>
           </div>
         )}
       </div>

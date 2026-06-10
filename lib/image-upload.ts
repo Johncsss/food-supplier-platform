@@ -91,3 +91,63 @@ export const generateImagePreview = (file: File): Promise<string> => {
     reader.readAsDataURL(file);
   });
 };
+
+/**
+ * Upload a document file (PDF or image) to Firebase Storage
+ * @param file - The file to upload (PDF or image)
+ * @param folder - The folder path in storage (default: 'business_registrations')
+ * @param fileName - Optional custom file name (default: auto-generated timestamp)
+ * @returns Promise with upload result
+ */
+export const uploadDocument = async (
+  file: File,
+  folder: string = 'business_registrations',
+  fileName?: string
+): Promise<UploadResult> => {
+  try {
+    // Validate file type (allow images and PDFs)
+    const allowedTypes = ['image/', 'application/pdf'];
+    const isValidType = allowedTypes.some(type => file.type.startsWith(type));
+    
+    if (!isValidType) {
+      return {
+        success: false,
+        error: '請選擇圖片或 PDF 檔案'
+      };
+    }
+
+    // Validate file size (max 10MB for documents)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      return {
+        success: false,
+        error: '檔案大小不能超過 10MB'
+      };
+    }
+
+    // Generate file name if not provided
+    const timestamp = Date.now();
+    const fileExtension = file.name.split('.').pop();
+    const finalFileName = fileName || `business_reg_${timestamp}.${fileExtension}`;
+    
+    // Create storage reference
+    const storageRef = ref(storage, `${folder}/${finalFileName}`);
+    
+    // Upload file
+    const snapshot = await uploadBytes(storageRef, file);
+    
+    // Get download URL
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    return {
+      success: true,
+      url: downloadURL
+    };
+  } catch (error: any) {
+    console.error('Error uploading document:', error);
+    return {
+      success: false,
+      error: error.message || '檔案上傳失敗'
+    };
+  }
+};

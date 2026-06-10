@@ -30,7 +30,7 @@ export default function ComplaintModal({
     e.preventDefault();
     
     if (!message.trim()) {
-      toast.error('請輸入投訴內容');
+      toast.error('請輸入內容');
       return;
     }
 
@@ -39,9 +39,9 @@ export default function ComplaintModal({
       await onSubmit(message);
       setMessage('');
       onClose();
-      toast.success('投訴已提交');
+      toast.success('訊息已提交');
     } catch (error) {
-      toast.error('提交投訴時發生錯誤');
+      toast.error('提交時發生錯誤');
     } finally {
       setIsSubmitting(false);
     }
@@ -57,7 +57,7 @@ export default function ComplaintModal({
               <AlertCircle className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">提交投訴</h2>
+              <h2 className="text-xl font-bold text-gray-900">聯絡供應商</h2>
               <p className="text-sm text-gray-600">訂單編號：{orderId}</p>
             </div>
           </div>
@@ -73,14 +73,14 @@ export default function ComplaintModal({
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="text-sm font-medium text-blue-900 mb-2">投訴對象</h3>
+            <h3 className="text-sm font-medium text-blue-900 mb-2">供應商對象</h3>
             <p className="text-sm text-blue-800">{supplierCompanyName}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="complaint-message" className="block text-sm font-medium text-gray-700 mb-2">
-                投訴內容 <span className="text-red-500">*</span>
+                內容 <span className="text-red-500">*</span>
               </label>
               <textarea
                 id="complaint-message"
@@ -88,11 +88,11 @@ export default function ComplaintModal({
                 onChange={(e) => setMessage(e.target.value)}
                 rows={8}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                placeholder="請詳細描述您的問題或投訴內容，例如：商品品質問題、配送延遲、服務態度等..."
+                placeholder="請詳細描述您的內容，例如：商品品質問題、配送延遲、服務態度等..."
                 disabled={isSubmitting}
               />
               <p className="mt-2 text-sm text-gray-500">
-                建議提供具體的問題描述，以便供應商快速處理您的投訴
+                建議提供具體的問題描述，以便供應商快速處理您的聯絡
               </p>
             </div>
 
@@ -118,7 +118,7 @@ export default function ComplaintModal({
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>提交投訴</span>
+                    <span>提交</span>
                   </>
                 )}
               </button>

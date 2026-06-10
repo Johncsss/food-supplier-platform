@@ -8,16 +8,20 @@ import {
   Dimensions,
   SafeAreaView,
   StatusBar,
+  Alert,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../hooks/useAuth';
 import { db } from '../../../shared/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { Category } from '../../../shared/types';
 import { categories as defaultCategories } from '../../../shared/products';
 
 const { width } = Dimensions.get('window');
-const cardWidth = (width - 48) / 2; // 2 columns with margins
+const cardWidth = width - 32; // Full width minus padding (1 row per category)
 
 interface CategoryWithCount extends Category {
   productCount: number;
@@ -25,11 +29,50 @@ interface CategoryWithCount extends Category {
 
 const CategoriesScreen = () => {
   const navigation = useNavigation();
+  const { firebaseUser, loading: authLoading } = useAuth();
   const [categories, setCategories] = useState<CategoryWithCount[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Check authentication every time screen is focused - show alert and redirect to login if not authenticated
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!authLoading && !firebaseUser) {
+        // Show alert immediately when screen is focused
+        Alert.alert(
+          '需要登入',
+          '此功能需要登入後才能使用，是否前往登入？',
+          [
+            { 
+              text: '取消', 
+              style: 'cancel', 
+              onPress: () => (navigation as any).navigate('Home') 
+            },
+            {
+              text: '前往登入',
+              onPress: () => (navigation as any).navigate('Login'),
+            },
+          ]
+        );
+        // Navigate back to home immediately
+        (navigation as any).navigate('Home');
+      }
+    }, [firebaseUser, authLoading, navigation])
+  );
+
+  // Don't fetch data if not authenticated
+  useEffect(() => {
+    if (!firebaseUser || authLoading) {
+      return;
+    }
+
+    fetchCategories();
+  }, [firebaseUser, authLoading]);
+
   // Fetch categories and their product counts from Firestore
   const fetchCategories = async () => {
+    if (!firebaseUser) {
+      return; // Don't fetch if not authenticated
+    }
     try {
       setLoading(true);
       
@@ -44,6 +87,7 @@ const CategoriesScreen = () => {
           description: data.description || '',
           imageUrl: data.imageUrl || '',
           subcategories: data.subcategories || [],
+          minimumSpending: data.minimumSpending || undefined,
         };
       });
       
@@ -83,34 +127,32 @@ const CategoriesScreen = () => {
     }
   };
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
+  // Show loading or redirect if not authenticated
+  if (authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={{ marginTop: 10, color: '#666' }}>載入中...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
-  const getCategoryIcon = (categoryName: string) => {
-    switch (categoryName) {
-      case '蔬菜/淨菜加工類':
-        return 'leaf-outline';
-      case '糧油乾貨類':
-        return 'basket-outline';
-      case '進口凍肉類':
-        return 'restaurant-outline';
-      case '進口海產類':
-        return 'fish-outline';
-      case '半加工及預製食品類':
-        return 'cube-outline';
-      case '烘焙甜品類':
-        return 'bread-outline';
-      case '飲品材料類':
-        return 'cafe-outline';
-      case '清潔用品類':
-        return 'sparkles-outline';
-      case '酒精類':
-        return 'wine-outline';
-      default:
-        return 'grid-outline';
-    }
-  };
+  if (!firebaseUser) {
+    // This should not be reached due to navigation redirect, but show empty screen as fallback
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ fontSize: 18, color: '#666', textAlign: 'center' }}>
+            請先登入以查看產品類別
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleCategoryPress = (category: CategoryWithCount) => {
     navigation.navigate('CategoryProducts' as never, { category } as never);
@@ -123,6 +165,20 @@ const CategoriesScreen = () => {
       <View style={styles.header}>
         <Text style={styles.title}>產品類別</Text>
         <Text style={styles.subtitle}>選擇您需要的產品類別</Text>
+        <TouchableOpacity
+          style={styles.favoritesButton}
+          onPress={() => (navigation as any).navigate('Favorites')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.favoritesIcon}>
+            <Ionicons name="heart-outline" size={20} color="#2563EB" />
+          </View>
+          <View style={styles.favoritesTextContainer}>
+            <Text style={styles.favoritesLabel}>收藏產品</Text>
+            <Text style={styles.favoritesDescription}>快速查看已收藏的產品</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -134,17 +190,26 @@ const CategoriesScreen = () => {
               onPress={() => handleCategoryPress(category)}
               activeOpacity={0.7}
             >
-              <View style={styles.iconContainer}>
-                <Ionicons
-                  name={getCategoryIcon(category.name) as any}
-                  size={32}
-                  color="#10B981"
+              {category.imageUrl ? (
+                <Image
+                  source={{ uri: category.imageUrl }}
+                  style={styles.categoryImage}
+                  resizeMode="cover"
                 />
+              ) : (
+                <View style={styles.categoryImagePlaceholder}>
+                  <Ionicons name="image-outline" size={40} color="#9CA3AF" />
+                </View>
+              )}
+              <View style={styles.categoryContent}>
+                <Text style={styles.categoryName}>{category.name}</Text>
+                <Text style={styles.itemCount}>{category.productCount} 個產品</Text>
+                {category.minimumSpending && category.minimumSpending > 0 && (
+                  <Text style={styles.minimumSpending}>最低消費: HKD$ {category.minimumSpending}</Text>
+                )}
               </View>
-              <Text style={styles.categoryName}>{category.name}</Text>
-              <Text style={styles.itemCount}>{category.productCount} 個產品</Text>
               <View style={styles.arrowContainer}>
-                <Ionicons name="chevron-forward" size={16} color="#10B981" />
+                <Ionicons name="chevron-forward" size={20} color="#10B981" />
               </View>
             </TouchableOpacity>
           ))}
@@ -163,6 +228,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 10,
+    gap: 12,
   },
   title: {
     fontSize: 24,
@@ -174,21 +240,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
+  favoritesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3.84,
+    elevation: 3,
+  },
+  favoritesIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  favoritesTextContainer: {
+    flex: 1,
+  },
+  favoritesLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  favoritesDescription: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
   scrollView: {
     flex: 1,
     backgroundColor: '#f8fafc',
   },
   categoriesGrid: {
     padding: 16,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
   },
   categoryCard: {
     width: cardWidth,
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: {
@@ -198,18 +296,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
   },
-  iconContainer: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#ecfdf5',
-    borderRadius: 30,
+  categoryImage: {
+    width: 100,
+    height: 100,
+    backgroundColor: '#f3f4f6',
+  },
+  categoryImagePlaceholder: {
+    width: 100,
+    height: 100,
+    backgroundColor: '#f3f4f6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+  },
+  categoryContent: {
+    flex: 1,
+    padding: 16,
   },
   categoryName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: 4,
@@ -217,10 +325,17 @@ const styles = StyleSheet.create({
   itemCount: {
     fontSize: 14,
     color: '#6b7280',
+    marginBottom: 4,
+  },
+  minimumSpending: {
+    fontSize: 13,
+    color: '#F59E0B',
+    fontWeight: '600',
     marginBottom: 8,
   },
   arrowContainer: {
-    alignItems: 'flex-end',
+    paddingRight: 16,
+    justifyContent: 'center',
   },
 });
 

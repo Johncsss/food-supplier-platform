@@ -44,6 +44,7 @@ export default function AdminProducts() {
     stockQuantity: '',
     imageUrl: '',
     isAvailable: true,
+    showOnHomepage: false,
     supplier: ''
   });
   const [addForm, setAddForm] = useState({
@@ -59,6 +60,7 @@ export default function AdminProducts() {
     imageUrls: [] as string[],
     imageUrl: '', // Keep for backward compatibility
     isAvailable: true,
+    showOnHomepage: false,
     supplier: ''
   });
   const [categoryForm, setCategoryForm] = useState({
@@ -194,6 +196,7 @@ export default function AdminProducts() {
             imageUrl: data.imageUrl || '',
             imageUrls: data.imageUrls || [],
             isAvailable: data.isAvailable ?? true,
+            showOnHomepage: data.showOnHomepage ?? false,
             supplier: data.supplier || '',
             createdAt: data.createdAt?.toDate?.() || new Date(),
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
@@ -295,6 +298,7 @@ export default function AdminProducts() {
       stockQuantity: product.stockQuantity.toString(),
       imageUrl: product.imageUrl || '',
       isAvailable: product.isAvailable,
+      showOnHomepage: product.showOnHomepage ?? false,
       supplier: supplierId
     });
     setShowEditModal(true);
@@ -322,6 +326,7 @@ export default function AdminProducts() {
         stockQuantity: parseInt(editForm.stockQuantity),
         imageUrl: editForm.imageUrl,
         isAvailable: editForm.isAvailable,
+        showOnHomepage: editForm.showOnHomepage,
         supplier: editForm.supplier,
         updatedAt: serverTimestamp()
       });
@@ -340,6 +345,7 @@ export default function AdminProducts() {
               stockQuantity: parseInt(editForm.stockQuantity),
               imageUrl: editForm.imageUrl,
               isAvailable: editForm.isAvailable,
+              showOnHomepage: editForm.showOnHomepage,
               supplier: editForm.supplier,
               updatedAt: new Date()
             }
@@ -379,6 +385,7 @@ export default function AdminProducts() {
         imageUrl: addForm.imageUrls.length > 0 ? addForm.imageUrls[0] : '', // First image for backward compatibility
         imageUrls: addForm.imageUrls || [], // All images
         isAvailable: addForm.isAvailable,
+        showOnHomepage: addForm.showOnHomepage,
         supplier: addForm.supplier,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -400,6 +407,7 @@ export default function AdminProducts() {
         imageUrl: addForm.imageUrls.length > 0 ? addForm.imageUrls[0] : '',
         imageUrls: addForm.imageUrls || [],
         isAvailable: addForm.isAvailable,
+        showOnHomepage: addForm.showOnHomepage,
         supplier: addForm.supplier,
         createdAt: new Date(),
         updatedAt: new Date()
@@ -422,6 +430,7 @@ export default function AdminProducts() {
         imageUrls: [],
         imageUrl: '',
         isAvailable: true,
+        showOnHomepage: false,
         supplier: ''
       });
     } catch (error: any) {
@@ -595,20 +604,23 @@ export default function AdminProducts() {
             <h1 className="text-3xl font-bold text-gray-900">產品管理</h1>
             <p className="text-gray-600">管理目錄中的所有產品</p>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button 
               onClick={() => setShowCategoryModal(true)}
-              className="btn-secondary"
+              className="inline-flex items-center rounded-lg border border-primary-600 px-4 py-2 text-sm font-medium text-primary-600 shadow-sm transition hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               <Tag className="w-4 h-4 mr-2" />
               管理類別
+              <span className="ml-2 text-xs font-normal text-primary-400">產品分類</span>
             </button>
             <Link 
               href="/admin/products/add"
-              className="btn-primary inline-flex items-center"
+              className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2"
+              style={{ backgroundColor: '#0B8628' }}
             >
               <Plus className="w-4 h-4 mr-2" />
               新增產品
+              <span className="ml-2 text-xs font-normal text-primary-100">建立產品</span>
             </Link>
           </div>
         </div>
@@ -1042,6 +1054,22 @@ export default function AdminProducts() {
                     <span className="ml-2 text-sm text-gray-700">可購買</span>
                   </label>
                 </div>
+
+                <div className="flex items-start space-x-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <input
+                    id="addShowOnHomepage"
+                    type="checkbox"
+                    checked={addForm.showOnHomepage}
+                    onChange={(e) => setAddForm({...addForm, showOnHomepage: e.target.checked})}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <label htmlFor="addShowOnHomepage" className="text-sm font-medium text-gray-900">
+                      顯示於首頁
+                    </label>
+                    <p className="text-xs text-gray-500">勾選後，此產品會顯示在首頁精選產品區域</p>
+                  </div>
+                </div>
               </div>
               
               <div className="mt-6 flex justify-end space-x-3">
@@ -1238,6 +1266,22 @@ export default function AdminProducts() {
                     />
                     <span className="ml-2 text-sm text-gray-700">可購買</span>
                   </label>
+                </div>
+
+                <div className="flex items-start space-x-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <input
+                    id="editShowOnHomepage"
+                    type="checkbox"
+                    checked={editForm.showOnHomepage}
+                    onChange={(e) => setEditForm({...editForm, showOnHomepage: e.target.checked})}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <label htmlFor="editShowOnHomepage" className="text-sm font-medium text-gray-900">
+                      顯示於首頁
+                    </label>
+                    <p className="text-xs text-gray-500">控制此產品是否顯示在首頁精選區域</p>
+                  </div>
                 </div>
               </div>
               

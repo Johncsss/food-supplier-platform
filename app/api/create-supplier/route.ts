@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     ensureFirebaseAdminInitialized();
 
     const body = await request.json();
-    const { name, companyName, email, password, phone, status, address, category } = body;
+    const { name, companyName, email, password, phone, status, address, category, logo } = body;
 
     // Validate required fields
     if (!name || !companyName || !email || !password || !phone) {
@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       status: status || 'active',
       address: address || '',
       category: category || '',
+      logo: logo || '',
       role: 'supplier',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
         status: status || 'active',
         address: address || '',
         category: category || '',
+        logo: logo || '',
       }
     });
   } catch (error: any) {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,106 +9,78 @@ import {
   StatusBar,
   Image,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+// Removed direct Firestore import
+// Removed db import
+import { fetchServicePageAreas, fetchMobileAppData } from '../services/servicePageDefaults';
 
 const { width } = Dimensions.get('window');
 
 const RestaurantConstructionScreen: React.FC = () => {
   const navigation = useNavigation();
+  const [pageAreas, setPageAreas] = useState<any | null>(null);
+  const [mobileAppData, setMobileAppData] = useState<any | null>(null);
 
-  const services = [
-    {
-      id: 1,
-      title: '餐廳設計規劃',
-      description: '專業的餐廳空間設計，從概念到實作全程服務',
-      icon: 'design-outline',
-      color: '#10B981'
-    },
-    {
-      id: 2,
-      title: '廚房設備安裝',
-      description: '專業廚房設備安裝與配置，確保高效運作',
-      icon: 'construct-outline',
-      color: '#3B82F6'
-    },
-    {
-      id: 3,
-      title: '水電工程',
-      description: '餐廳專用水電系統設計與安裝',
-      icon: 'flash-outline',
-      color: '#F59E0B'
-    },
-    {
-      id: 4,
-      title: '空調通風系統',
-      description: '專業空調與通風系統安裝，確保舒適環境',
-      icon: 'snow-outline',
-      color: '#8B5CF6'
-    },
-    {
-      id: 5,
-      title: '消防系統',
-      description: '符合法規的消防系統設計與安裝',
-      icon: 'shield-outline',
-      color: '#EF4444'
-    },
-    {
-      id: 6,
-      title: '裝修工程',
-      description: '室內裝修、地板、牆面等整體裝修服務',
-      icon: 'hammer-outline',
-      color: '#06B6D4'
-    }
-  ];
+  const servicesItems = pageAreas?.services?.items || [];
+  const featuresItems = pageAreas?.features?.items || [];
 
-  const features = [
-    {
-      title: '專業團隊',
-      description: '擁有豐富餐廳工程經驗的專業團隊',
-      icon: 'people-outline'
-    },
-    {
-      title: '品質保證',
-      description: '使用優質材料，提供品質保證',
-      icon: 'checkmark-circle-outline'
-    },
-    {
-      title: '快速施工',
-      description: '高效施工流程，縮短營業中斷時間',
-      icon: 'time-outline'
-    },
-    {
-      title: '售後服務',
-      description: '完善的售後服務與維護保養',
-      icon: 'settings-outline'
-    }
-  ];
-
-  const renderService = (service: any) => (
-    <View key={service.id} style={styles.serviceCard}>
-      <View style={[styles.serviceIcon, { backgroundColor: service.color }]}>
-        <Ionicons name={service.icon as any} size={24} color="#fff" />
-      </View>
-      <View style={styles.serviceContent}>
+  const renderService = (service: any, index: number) => (
+    <View key={index} style={styles.serviceCard}>
         <Text style={styles.serviceTitle}>{service.title}</Text>
         <Text style={styles.serviceDescription}>{service.description}</Text>
-      </View>
     </View>
   );
 
   const renderFeature = (feature: any, index: number) => (
     <View key={index} style={styles.featureItem}>
-      <View style={styles.featureIcon}>
-        <Ionicons name={feature.icon as any} size={20} color="#10B981" />
-      </View>
-      <View style={styles.featureContent}>
         <Text style={styles.featureTitle}>{feature.title}</Text>
         <Text style={styles.featureDescription}>{feature.description}</Text>
-      </View>
     </View>
   );
+
+  useEffect(() => {
+    const loadPageData = async () => {
+      try {
+        const areas = await fetchServicePageAreas('restaurant-construction');
+        setPageAreas(areas);
+      } catch (error) {
+        if (__DEV__) {
+          console.log(
+            'Warning: unable to load restaurant-construction page data for mobile, using defaults:',
+            error,
+          );
+        }
+      }
+    };
+
+    const loadMobileAppData = async () => {
+      try {
+        const areas = await fetchMobileAppData();
+        if (areas) {
+          setMobileAppData(areas);
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.log("Warning: unable to load mobile-app page data:", error);
+        }
+      }
+    };
+
+    loadPageData();
+    loadMobileAppData();
+  }, []);
+
+  const servicesTitle = pageAreas?.services?.title;
+  const servicesDescription = pageAreas?.services?.description;
+  const featuresTitle = pageAreas?.features?.title;
+  const featuresDescription = pageAreas?.features?.description;
+  const contactTitle = pageAreas?.contact?.title;
+  const contactDescription = pageAreas?.contact?.description;
+  const contactButtonText = pageAreas?.contact?.button1Text;
+  const headerTitle = mobileAppData?.categories?.category8?.title;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -122,51 +94,76 @@ const RestaurantConstructionScreen: React.FC = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>餐廳工程</Text>
+        <Text style={styles.headerTitle}>{headerTitle || ''}</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>專業餐廳工程服務</Text>
-            <Text style={styles.heroSubtitle}>
-              從設計規劃到施工完成，提供全方位的餐廳工程解決方案
-            </Text>
+        {/* Banner Section */}
+        {pageAreas?.banner?.imageUrl ? (
+          <View style={styles.bannerSection}>
+            <Image
+              source={{ uri: pageAreas.banner.imageUrl }}
+              style={styles.bannerImage}
+              resizeMode="cover"
+            />
           </View>
-          <View style={styles.heroImageContainer}>
-            <Ionicons name="construct" size={80} color="#10B981" />
-          </View>
-        </View>
+        ) : null}
 
         {/* Services Section */}
+        {servicesTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>服務項目</Text>
-          <View style={styles.servicesContainer}>
-            {services.map(renderService)}
+            <Text style={styles.sectionTitle}>{servicesTitle}</Text>
+            {servicesDescription ? (
+              <Text style={styles.sectionDescription}>{servicesDescription}</Text>
+            ) : null}
+            {servicesItems.length > 0 ? (
+              <View style={styles.servicesGrid}>
+                {servicesItems.map((service: any, index: number) => renderService(service, index))}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
 
         {/* Features Section */}
+        {featuresTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>服務特色</Text>
-          <View style={styles.featuresContainer}>
-            {features.map(renderFeature)}
+            <Text style={styles.sectionTitle}>{featuresTitle}</Text>
+            {featuresDescription ? (
+              <Text style={styles.sectionDescription}>{featuresDescription}</Text>
+            ) : null}
+            {featuresItems.length > 0 ? (
+              <View style={styles.featuresGrid}>
+                {featuresItems.map((feature: any, index: number) => renderFeature(feature, index))}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
 
         {/* Contact Section */}
+        {contactTitle ? (
         <View style={styles.contactSection}>
-          <Text style={styles.contactTitle}>立即諮詢</Text>
-          <Text style={styles.contactSubtitle}>
-            專業團隊為您提供免費諮詢與報價服務
-          </Text>
-          <TouchableOpacity style={styles.contactButton}>
-            <Ionicons name="call-outline" size={20} color="#fff" />
-            <Text style={styles.contactButtonText}>聯絡我們</Text>
+          <Text style={styles.contactTitle}>{contactTitle}</Text>
+            {contactDescription ? (
+              <Text style={styles.contactSubtitle}>{contactDescription}</Text>
+            ) : null}
+            {contactButtonText ? (
+          <TouchableOpacity
+            style={styles.contactButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              const whatsappUrl = 'https://wa.me/85298636938?text=您好，我想查詢。';
+              Linking.openURL(whatsappUrl).catch((err) => {
+                console.error('Failed to open WhatsApp:', err);
+              });
+            }}
+          >
+            <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
+                <Text style={styles.contactButtonText}>{contactButtonText}</Text>
           </TouchableOpacity>
+            ) : null}
         </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -200,35 +197,14 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  heroSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 30,
-    backgroundColor: '#f8fafc',
+  bannerSection: {
+    width: '100%',
+    height: 200,
+    marginBottom: 20,
   },
-  heroContent: {
-    flex: 1,
-    marginRight: 20,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    lineHeight: 24,
-  },
-  heroImageContainer: {
-    width: 100,
-    height: 100,
-    backgroundColor: '#ecfdf5',
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
+  bannerImage: {
+    width: '100%',
+    height: '100%',
   },
   section: {
     paddingHorizontal: 20,
@@ -238,82 +214,81 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  sectionDescription: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
     marginBottom: 20,
   },
-  servicesContainer: {
-    gap: 15,
+  servicesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   serviceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: (width - 60) / 2,
     backgroundColor: '#fff',
-    padding: 20,
     borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  serviceIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
+    shadowRadius: 4,
+    elevation: 3,
     alignItems: 'center',
-    marginRight: 15,
-  },
-  serviceContent: {
-    flex: 1,
   },
   serviceTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
-    marginBottom: 5,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   serviceDescription: {
     fontSize: 14,
     color: '#666',
-    lineHeight: 20,
+    textAlign: 'center',
   },
-  featuresContainer: {
-    gap: 15,
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    width: (width - 60) / 2,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     padding: 15,
-    borderRadius: 8,
-  },
-  featureIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#ecfdf5',
-    borderRadius: 20,
-    justifyContent: 'center',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
     alignItems: 'center',
-    marginRight: 15,
-  },
-  featureContent: {
-    flex: 1,
   },
   featureTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
-    marginBottom: 3,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   featureDescription: {
     fontSize: 14,
     color: '#666',
+    textAlign: 'center',
   },
   contactSection: {
-    backgroundColor: '#10B981',
+    backgroundColor: 'rgb(11, 134, 40)',
     paddingHorizontal: 20,
     paddingVertical: 30,
     alignItems: 'center',
@@ -329,24 +304,32 @@ const styles = StyleSheet.create({
   },
   contactSubtitle: {
     fontSize: 16,
-    color: '#fff',
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     marginBottom: 20,
-    opacity: 0.9,
   },
   contactButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 25,
-    paddingVertical: 12,
-    borderRadius: 25,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 30,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    minHeight: 56,
   },
   contactButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#10B981',
-    marginLeft: 8,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0B8628',
+    marginLeft: 10,
+    letterSpacing: 0.5,
   },
 });
 

@@ -89,7 +89,7 @@ export default function Register() {
               {t('Create Your Restaurant Account')}
             </h1>
             <p className="text-gray-600">
-              {t('Join FoodSupplier Pro and get access to premium food supply services.')}
+              {t('Join iFoodPulse and get access to premium food supply services.')}
             </p>
           </div>
 

@@ -10,11 +10,11 @@ import {
   Menu,
   X,
   Home,
-  UtensilsCrossed,
-  Coins
+  Coins,
+  Heart
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -43,7 +43,20 @@ export default function DashboardLayout({
   const [pendingOrders, setPendingOrders] = useState(0);
   const [loadingPendingCount, setLoadingPendingCount] = useState(true);
   const pathname = usePathname();
-  const { user, firebaseUser, signOut } = useAuth();
+  const router = useRouter();
+  const { user, firebaseUser, signOut, isAdmin, isSupplier, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading) return;
+    if (isAdmin) {
+      router.replace('/admin/welcome');
+      return;
+    }
+    if (isSupplier) {
+      router.replace('/supplier');
+      return;
+    }
+  }, [loading, isAdmin, isSupplier, router]);
 
   useEffect(() => {
     const fetchPendingOrdersCount = async () => {
@@ -75,8 +88,13 @@ export default function DashboardLayout({
     { name: '儀表板', href: '/dashboard', icon: LayoutDashboard },
     { name: '我的訂單', href: '/dashboard/orders', icon: ShoppingCart, badge: pendingOrders > 0 ? pendingOrders : undefined },
     { name: '會員點數', href: '/dashboard/points', icon: Coins },
+    { name: '收藏產品', href: '/dashboard/favorites', icon: Heart },
     { name: '帳戶資料', href: '/dashboard/profile', icon: User },
   ];
+
+  if (!loading && (isAdmin || isSupplier)) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -94,14 +112,11 @@ export default function DashboardLayout({
       }`}>
         {/* Sidebar Header */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-primary-100">
-              <UtensilsCrossed className="w-6 h-6 text-primary-600" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">{user?.restaurantName || '餐廳'}</h1>
-              <p className="text-xs text-gray-500">會員</p>
-            </div>
+          <div className="flex flex-col">
+            <span className="text-xs uppercase tracking-wide text-gray-400">餐廳名稱</span>
+            <span className="text-lg font-bold text-gray-900">
+              {user?.restaurantName || user?.name || '餐廳'}
+            </span>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -114,6 +129,16 @@ export default function DashboardLayout({
         {/* Sidebar Navigation */}
         <nav className="mt-6 px-3 flex-1">
           <div className="space-y-1">
+            {/* Back to Home Link */}
+            <Link
+              href="/"
+              className="group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900 mb-2"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <Home className="w-5 h-5 mr-3 text-gray-400 group-hover:text-gray-500" />
+              <span className="flex-1">返回首頁</span>
+            </Link>
+            
             {sidebarItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -185,10 +210,15 @@ export default function DashboardLayout({
               </button>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               {/* Quick actions */}
-              <Link href="/products" className="btn-outline text-sm">
-                去訂貨
+              <Link
+                href="/products"
+                className="inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                style={{ backgroundColor: '#0B8628' }}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>去訂貨</span>
               </Link>
             </div>
           </div>

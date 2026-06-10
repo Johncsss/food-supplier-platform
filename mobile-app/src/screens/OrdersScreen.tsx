@@ -9,12 +9,17 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Alert
+  Alert,
+  Modal,
+  TextInput,
+  Image
 } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../hooks/useAuth';
 import { getBestApiEndpoint } from '../utils/apiHelper';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
 
 interface OrderItem {
   productId: string;
@@ -23,6 +28,7 @@ interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   imageUrl: string;
+  unit?: string;
 }
 
 interface Order {
@@ -43,15 +49,228 @@ interface Order {
   };
   notes?: string;
   source?: string;
+  supplier?: string;
+  supplierId?: string;
+  supplierName?: string;
+  supplierCompanyName?: string;
+  supplierLogo?: string;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
 
 const OrdersScreen: React.FC = () => {
-  const { user, firebaseUser } = useAuth();
+  const navigation = useNavigation();
+  const { user, firebaseUser, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [contactMessage, setContactMessage] = useState('');
+  const [submittingContact, setSubmittingContact] = useState(false);
+  const [ordersBannerImage, setOrdersBannerImage] = useState<string | null>(null);
+  const [supplierCache, setSupplierCache] = useState<Map<string, string>>(new Map());
+  const [supplierLogoCache, setSupplierLogoCache] = useState<Map<string, string>>(new Map());
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+
+  // Check authentication every time screen is focused - show alert and redirect to login if not authenticated
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!authLoading && !firebaseUser) {
+        // Show alert immediately when screen is focused
+        Alert.alert(
+          '需要登入',
+          '此功能需要登入後才能使用，是否前往登入？',
+          [
+            { 
+              text: '取消', 
+              style: 'cancel', 
+              onPress: () => (navigation as any).navigate('Home') 
+            },
+            {
+              text: '前往登入',
+              onPress: () => (navigation as any).navigate('Login'),
+            },
+          ]
+        );
+        // Navigate back to home immediately
+        (navigation as any).navigate('Home');
+      }
+    }, [firebaseUser, authLoading, navigation])
+  );
+
+  // Show loading or redirect if not authenticated
+  if (authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={{ marginTop: 10, color: '#666' }}>載入中...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!firebaseUser) {
+    // This should not be reached due to navigation redirect, but show empty screen as fallback
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ fontSize: 18, color: '#666', textAlign: 'center' }}>
+            請先登入以查看訂單
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Fetch supplier company name from Firestore
+  const fetchSupplierName = async (supplierId: string): Promise<string | null> => {
+    // Check cache first
+    if (supplierCache.has(supplierId)) {
+      return supplierCache.get(supplierId) || null;
+    }
+
+    try {
+      // Try to get supplier by document ID first
+      const supplierDoc = await getDoc(doc(db, 'users', supplierId));
+      if (supplierDoc.exists()) {
+        const data = supplierDoc.data();
+        const companyName = data.companyName || data.name || null;
+        if (companyName) {
+          setSupplierCache(prev => new Map(prev).set(supplierId, companyName));
+          return companyName;
+        }
+      }
+
+      // If not found by ID, try searching by firebaseUid or id field
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'supplier')
+      );
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const data = userDoc.data();
+        if (data.id === supplierId || userDoc.id === supplierId || data.firebaseUid === supplierId) {
+          const companyName = data.companyName || data.name || null;
+          if (companyName) {
+            setSupplierCache(prev => new Map(prev).set(supplierId, companyName));
+            return companyName;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error fetching supplier name:', error);
+      return null;
+    }
+  };
+
+  // Fetch supplier logo from Firestore
+  const fetchSupplierLogo = async (supplierId: string): Promise<string | null> => {
+    // Check cache first
+    if (supplierLogoCache.has(supplierId)) {
+      return supplierLogoCache.get(supplierId) || null;
+    }
+
+    try {
+      // Try to get supplier by document ID first
+      const supplierDoc = await getDoc(doc(db, 'users', supplierId));
+      if (supplierDoc.exists()) {
+        const data = supplierDoc.data();
+        const logo = data.logo || null;
+        if (logo) {
+          setSupplierLogoCache(prev => new Map(prev).set(supplierId, logo));
+          return logo;
+        }
+      }
+
+      // If not found by ID, try searching by firebaseUid or id field
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'supplier')
+      );
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const data = userDoc.data();
+        if (data.id === supplierId || userDoc.id === supplierId || data.firebaseUid === supplierId) {
+          const logo = data.logo || null;
+          if (logo) {
+            setSupplierLogoCache(prev => new Map(prev).set(supplierId, logo));
+            return logo;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error fetching supplier logo:', error);
+      return null;
+    }
+  };
+
+  // Check if a string looks like an ID (vs a readable company name)
+  const looksLikeId = (str: string): boolean => {
+    if (!str) return false;
+    // IDs are typically: short alphanumeric, UUIDs, or don't contain spaces/Chinese characters
+    // Company names typically: contain spaces, Chinese characters, or are longer descriptive strings
+    const hasSpaces = /\s/.test(str);
+    const hasChinese = /[\u4e00-\u9fa5]/.test(str);
+    const isShortAlphanumeric = /^[a-zA-Z0-9_-]{1,20}$/.test(str) && str.length < 30;
+    
+    // If it has spaces or Chinese, it's likely a name
+    if (hasSpaces || hasChinese) return false;
+    // If it's a short alphanumeric string, it might be an ID
+    if (isShortAlphanumeric) return true;
+    // Otherwise, assume it's a name if it's longer
+    return false;
+  };
+
+  // Enrich orders with supplier names and logos
+  const enrichOrdersWithSupplierNames = async (orders: Order[]): Promise<Order[]> => {
+    const enrichedOrders = await Promise.all(
+      orders.map(async (order) => {
+        // Get supplier identifier
+        const supplierId = order.supplierId || order.supplier;
+        if (!supplierId) {
+          return order;
+        }
+
+        let enrichedOrder = { ...order };
+
+        // Enrich supplier name if not already present
+        if (!order.supplierCompanyName && !order.supplierName) {
+          // If supplier field looks like a readable name (not an ID), use it directly
+          if (!looksLikeId(supplierId)) {
+            enrichedOrder.supplierCompanyName = supplierId;
+          } else {
+            // Otherwise, fetch supplier name from Firestore
+            const supplierName = await fetchSupplierName(supplierId);
+            if (supplierName) {
+              enrichedOrder.supplierCompanyName = supplierName;
+            }
+          }
+        }
+
+        // Enrich supplier logo if not already present
+        if (!order.supplierLogo && looksLikeId(supplierId)) {
+          const supplierLogo = await fetchSupplierLogo(supplierId);
+          if (supplierLogo) {
+            enrichedOrder.supplierLogo = supplierLogo;
+          }
+        }
+
+        return enrichedOrder;
+      })
+    );
+
+    return enrichedOrders;
+  };
 
   const fetchOrdersFromFirestore = async (userId: string): Promise<Order[]> => {
     try {
@@ -118,8 +337,11 @@ const OrdersScreen: React.FC = () => {
       // Sort by createdAt descending
       fetchedOrders.sort((a, b) => (b.createdAt as any) - (a.createdAt as any));
       
-      console.log(`✅ Successfully loaded ${fetchedOrders.length} orders from Firestore`);
-      return fetchedOrders;
+      // Enrich orders with supplier names
+      const enrichedOrders = await enrichOrdersWithSupplierNames(fetchedOrders);
+      
+      console.log(`✅ Successfully loaded ${enrichedOrders.length} orders from Firestore`);
+      return enrichedOrders;
     } catch (error) {
       console.error('Error fetching orders from Firestore:', error);
       return [];
@@ -181,7 +403,9 @@ const OrdersScreen: React.FC = () => {
                 updatedAt: new Date(order.updatedAt),
                 deliveryDate: order.deliveryDate ? new Date(order.deliveryDate) : new Date()
               }));
-              setOrders(processedOrders);
+              // Enrich orders with supplier names
+              const enrichedOrders = await enrichOrdersWithSupplierNames(processedOrders);
+              setOrders(enrichedOrders);
               return;
             }
           }
@@ -202,6 +426,28 @@ const OrdersScreen: React.FC = () => {
   useEffect(() => {
     fetchOrders();
   }, [firebaseUser]);
+
+  // Fetch orders banner from mobile-app content
+  useEffect(() => {
+    const fetchOrdersBanner = async () => {
+      try {
+        const pageDoc = await getDoc(doc(db, 'pages', 'mobile-app'));
+        if (pageDoc.exists()) {
+          const data = pageDoc.data();
+          const areasData = data.areas || null;
+          if (areasData?.ordersBanner?.image) {
+            setOrdersBannerImage(areasData.ordersBanner.image);
+          } else {
+            setOrdersBannerImage(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching orders banner:', error);
+        setOrdersBannerImage(null);
+      }
+    };
+    fetchOrdersBanner();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -271,66 +517,153 @@ const OrdersScreen: React.FC = () => {
     return `${month} ${day}, ${year} at ${displayHours}:${minutes} ${ampm}`;
   };
 
+  const formatAddressValue = (address: { street?: string; city?: string; state?: string; zipCode?: string } | undefined) => {
+    if (!address) return '';
+    const line1 = [address.street].filter(Boolean).join(' ');
+    const cityState = [address.city, address.state].filter((p) => p && String(p).trim().length > 0)
+      .join(address.city && address.state ? ', ' : '');
+    const line2 = [cityState, address.zipCode].filter((p) => p && String(p).trim().length > 0).join(' ');
+    const lines = [];
+    if (line1) lines.push(line1);
+    if (line2) lines.push(line2);
+    return lines.join('\n');
+  };
+
   const renderOrderItem = ({ item }: { item: OrderItem }) => (
     <View style={styles.orderItem}>
       <Text style={styles.itemName}>{item.productName}</Text>
       <View style={styles.itemDetails}>
-        <Text style={styles.itemQuantity}>數量: {item.quantity}</Text>
+        <Text style={styles.itemQuantity}>數量: {item.quantity} / {item.unit || '單位'}</Text>
         <Text style={styles.itemPrice}>{formatCurrency(item.unitPrice)}</Text>
       </View>
     </View>
   );
 
-  const renderOrder = ({ item }: { item: Order }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderId}>訂單 #{item.id}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.orderItems}>
-        <Text style={styles.itemsTitle}>商品清單</Text>
-        {item.items.map((orderItem, index) => (
-          <View key={`${item.id}-${orderItem.productId}-${index}`} style={styles.orderItem}>
-            <Text style={styles.itemName}>{orderItem.productName}</Text>
-            <View style={styles.itemDetails}>
-              <Text style={styles.itemQuantity}>數量: {orderItem.quantity}</Text>
-              <Text style={styles.itemPrice}>{formatCurrency(orderItem.unitPrice)}</Text>
+  const getSupplierName = (order: Order): string => {
+    // First try to get from enriched fields
+    if (order.supplierCompanyName) {
+      return order.supplierCompanyName;
+    }
+    if (order.supplierName) {
+      return order.supplierName;
+    }
+    // Check cache for supplier ID
+    const supplierId = order.supplierId || order.supplier;
+    if (supplierId && supplierCache.has(supplierId)) {
+      return supplierCache.get(supplierId) || supplierId;
+    }
+    // If supplier field doesn't look like an ID, use it directly
+    if (supplierId && !looksLikeId(supplierId)) {
+      return supplierId;
+    }
+    // Fallback
+    return supplierId || '未知供應商';
+  };
+
+  const toggleOrderExpansion = (orderId: string) => {
+    setExpandedOrders((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(orderId)) {
+        newSet.delete(orderId);
+      } else {
+        newSet.add(orderId);
+      }
+      return newSet;
+    });
+  };
+
+  const renderOrder = ({ item }: { item: Order }) => {
+    const supplierName = getSupplierName(item);
+    const isExpanded = expandedOrders.has(item.id);
+
+    return (
+      <View style={styles.orderCard}>
+        <TouchableOpacity
+          onPress={() => toggleOrderExpansion(item.id)}
+          style={styles.orderHeader}
+          activeOpacity={0.7}
+        >
+          <View style={styles.orderHeaderContent}>
+            <Text style={styles.orderId}>訂單 #{item.id}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+              <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
             </View>
           </View>
-        ))}
-      </View>
+          <Ionicons
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color="#666"
+          />
+        </TouchableOpacity>
+        
+        {isExpanded && (
+          <>
+            {/* Supplier Name and Logo */}
+            <View style={styles.supplierInfo}>
+              {item.supplierLogo && (
+                <Image
+                  source={{ uri: item.supplierLogo }}
+                  style={styles.supplierLogo}
+                  resizeMode="contain"
+                />
+              )}
+              <View style={styles.supplierTextContainer}>
+                <Text style={styles.supplierLabel}>供應商:</Text>
+                <Text style={styles.supplierName}>{supplierName}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.orderItems}>
+              <Text style={styles.itemsTitle}>商品清單</Text>
+              {item.items.map((orderItem, index) => (
+                <View key={`${item.id}-${orderItem.productId}-${index}`} style={styles.orderItem}>
+                  <Text style={styles.itemName}>{orderItem.productName}</Text>
+                  <View style={styles.itemDetails}>
+                    <Text style={styles.itemQuantity}>數量: {orderItem.quantity} / {orderItem.unit || '單位'}</Text>
+                    <Text style={styles.itemPrice}>{formatCurrency(orderItem.unitPrice)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
 
-      {/* Delivery Information */}
-      <View style={styles.deliveryInfo}>
-        <View style={styles.deliveryRow}>
-          <Text style={styles.deliveryLabel}>送貨日期:</Text>
-          <Text style={styles.deliveryValue}>{formatDate(item.deliveryDate)}</Text>
-        </View>
-        <View style={styles.deliveryRow}>
-          <Text style={styles.deliveryLabel}>送貨地址:</Text>
-          <Text style={styles.deliveryValue}>
-            {item.deliveryAddress.street}{'\n'}
-            {item.deliveryAddress.city}, {item.deliveryAddress.state} {item.deliveryAddress.zipCode}
-          </Text>
-        </View>
-      </View>
+            {/* Delivery Information */}
+            <View style={styles.deliveryInfo}>
+              <View style={styles.deliveryRow}>
+                <Text style={styles.deliveryLabel}>送貨地址:</Text>
+                <Text style={styles.deliveryValue}>{formatAddressValue(item.deliveryAddress)}</Text>
+              </View>
+            </View>
 
-      {item.notes && (
-        <View style={styles.notesSection}>
-          <Text style={styles.notesLabel}>備註:</Text>
-          <Text style={styles.notesValue}>{item.notes}</Text>
-        </View>
-      )}
+            {item.notes && (
+              <View style={styles.notesSection}>
+                <Text style={styles.notesLabel}>備註:</Text>
+                <Text style={styles.notesValue}>{item.notes}</Text>
+              </View>
+            )}
 
-      <View style={styles.orderFooter}>
-        <Text style={styles.orderDate}>下單時間: {formatDate(item.createdAt)}</Text>
-        <Text style={styles.orderTotal}>總計: {formatCurrency(item.totalAmount)}</Text>
+            {/* Actions */}
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-start', marginBottom: 12 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectedOrder(item);
+                  setContactMessage('');
+                  setContactModalVisible(true);
+                }}
+                style={styles.contactButton}
+              >
+                <Text style={styles.contactButtonText}>聯絡供應商</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.orderFooter}>
+              <Text style={styles.orderDate}>下單時間: {formatDate(item.createdAt)}</Text>
+              <Text style={styles.orderTotal}>總計: {formatCurrency(item.totalAmount)}</Text>
+            </View>
+          </>
+        )}
       </View>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -352,51 +685,18 @@ const OrdersScreen: React.FC = () => {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.header}>
         <Text style={styles.title}>我的訂單</Text>
-        {firebaseUser && (
-          <Text style={styles.debugText}>用戶ID: {firebaseUser.uid}</Text>
-        )}
-        <TouchableOpacity 
-          style={styles.testButton}
-          onPress={async () => {
-            console.log('=== Manual Test Button Pressed ===');
-            console.log('User:', user);
-            console.log('Firebase User:', firebaseUser);
-            
-            // Test API connectivity
-            try {
-              const baseEndpoint = await getBestApiEndpoint();
-              console.log('Base endpoint:', baseEndpoint);
-              
-              if (baseEndpoint && firebaseUser?.uid) {
-                const testUrl = `${baseEndpoint}/api/orders?userId=${firebaseUser.uid}`;
-                console.log('Testing API with URL:', testUrl);
-                
-                const response = await fetch(testUrl);
-                console.log('Test response status:', response.status);
-                
-                if (response.ok) {
-                  const data = await response.json();
-                  console.log('Test API response:', data);
-                  Alert.alert('API測試', `API連接成功！找到 ${data.orders?.length || 0} 個訂單`);
-                } else {
-                  const errorText = await response.text();
-                  console.log('Test API error:', errorText);
-                  Alert.alert('API測試', `API錯誤: ${response.status} - ${errorText}`);
-                }
-              } else {
-                Alert.alert('API測試', '無法獲取API端點或用戶ID');
-              }
-            } catch (error) {
-              console.error('Test error:', error);
-              Alert.alert('API測試', `測試失敗: ${error}`);
-            }
-            
-            fetchOrders();
-          }}
-        >
-          <Text style={styles.testButtonText}>測試連接</Text>
-        </TouchableOpacity>
       </View>
+
+      {/* Orders Banner */}
+      {ordersBannerImage && (
+        <View style={styles.ordersBannerContainer}>
+          <Image
+            source={{ uri: ordersBannerImage }}
+            style={styles.ordersBannerImage}
+            resizeMode="cover"
+          />
+        </View>
+      )}
 
       {orders.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -414,6 +714,108 @@ const OrdersScreen: React.FC = () => {
           }
         />
       )}
+
+      {/* 聯絡供應商 Modal */}
+      <Modal
+        transparent
+        visible={contactModalVisible}
+        animationType="fade"
+        onRequestClose={() => setContactModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>聯絡供應商</Text>
+            <Text style={styles.modalSubtitle}>訂單編號：{selectedOrder?.id || ''}</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="請輸入訊息給供應商"
+              placeholderTextColor="#9CA3AF"
+              value={contactMessage}
+              onChangeText={setContactMessage}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#E5E7EB' }]}
+                onPress={() => setContactModalVisible(false)}
+                disabled={submittingContact}
+              >
+                <Text style={[styles.modalButtonText, { color: '#111827' }]}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#10B981' }]}
+                onPress={async () => {
+                  if (!selectedOrder) return;
+                  const message = contactMessage.trim();
+                  if (!message) {
+                    Alert.alert('提醒', '請輸入訊息內容');
+                    return;
+                  }
+                  if (!firebaseUser?.uid) {
+                    Alert.alert('錯誤', '請先登入');
+                    return;
+                  }
+                  try {
+                    setSubmittingContact(true);
+                    const baseEndpoint = await getBestApiEndpoint();
+                    // Derive supplier information similar to website logic
+                    const anyOrder: any = selectedOrder as any;
+                    const supplierIdentifier =
+                      anyOrder.supplierId ||
+                      anyOrder.supplier ||
+                      (anyOrder.items || []).find((it: any) => it?.supplierId)?.supplierId ||
+                      (anyOrder.items || []).find((it: any) => it?.supplier)?.supplier ||
+                      '';
+                    if (!supplierIdentifier) {
+                      Alert.alert('錯誤', '無法判定供應商資訊，請聯絡客服協助');
+                      setSubmittingContact(false);
+                      return;
+                    }
+                    const supplierCompanyName =
+                      anyOrder.supplierCompanyName ||
+                      anyOrder.supplierName ||
+                      anyOrder.restaurantName ||
+                      supplierIdentifier;
+                    const payload = {
+                      orderId: selectedOrder.id,
+                      message,
+                      userId: firebaseUser.uid,
+                      userEmail: user?.email || '',
+                      restaurantName: user?.restaurantName || '',
+                      supplierId: supplierIdentifier,
+                      supplierCompanyName,
+                    };
+                    const url = `${baseEndpoint}/api/create-complaint`;
+                    const resp = await fetch(url, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
+                    });
+                    if (!resp.ok) {
+                      const data = await resp.json().catch(() => ({}));
+                      throw new Error(data?.error || '提交失敗');
+                    }
+                    setContactModalVisible(false);
+                    setSelectedOrder(null);
+                    setContactMessage('');
+                    Alert.alert('成功', '訊息已送出');
+                  } catch (err: any) {
+                    console.error('Contact supplier failed:', err);
+                    Alert.alert('錯誤', err?.message || '提交時發生錯誤');
+                  } finally {
+                    setSubmittingContact(false);
+                  }
+                }}
+                disabled={submittingContact}
+              >
+                <Text style={styles.modalButtonText}>{submittingContact ? '送出中...' : '送出'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -433,23 +835,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
-  debugText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 5,
+  ordersBannerContainer: {
+    marginHorizontal: 20,
+    marginTop: 15,
+    marginBottom: 15,
   },
-  testButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 5,
-    marginTop: 10,
-    alignSelf: 'flex-start',
-  },
-  testButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  ordersBannerImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
   },
   loadingContainer: {
     flex: 1,
@@ -492,11 +886,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
+  },
+  orderHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   orderId: {
     fontSize: 16,
     fontWeight: 'bold',
+    color: '#333',
+    marginRight: 10,
+  },
+  supplierInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  supplierLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 12,
+    backgroundColor: '#f5f5f5',
+  },
+  supplierTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  supplierLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginRight: 6,
+  },
+  supplierName: {
+    fontSize: 14,
+    fontWeight: '500',
     color: '#333',
   },
   statusBadge: {
@@ -591,6 +1023,66 @@ const styles = StyleSheet.create({
   notesValue: {
     fontSize: 12,
     color: '#666',
+  },
+  contactButton: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  contactButtonText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 6,
+    padding: 10,
+    minHeight: 100,
+    fontSize: 14,
+    color: '#111827',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+    gap: 10,
+  },
+  modalButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 6,
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

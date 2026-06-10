@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Calendar, User, MapPin, Clock, Search } from 'lucide-react';
+import { Package, User, MapPin, Clock, Search, RefreshCw, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import { format } from 'date-fns';
+import zhTW from 'date-fns/locale/zh-TW';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where, orderBy, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 interface OrderItem {
   productId: string;
@@ -13,6 +15,7 @@ interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   imageUrl: string;
+  unit?: string;
 }
 
 interface Order {
@@ -21,10 +24,12 @@ interface Order {
   firebaseUid?: string;
   userEmail?: string;
   restaurantName?: string;
+  supplier?: string;
   items: OrderItem[];
   totalAmount: number;
   status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   deliveryDate: Date;
+  deliveryTime?: string;
   deliveryAddress: {
     street: string;
     city: string;
@@ -122,12 +127,17 @@ const statusLabels = {
 export default function AdminOrders() {
   const { user, firebaseUser } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(false); // Start with false to avoid infinite loading
+  const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [supplierNames, setSupplierNames] = useState<Record<string, string>>({});
+  const [supplierLogos, setSupplierLogos] = useState<Record<string, string>>({});
 
   // Memoized filtered orders to prevent unnecessary re-renders
   const filteredOrders = useMemo(() => {
@@ -146,12 +156,108 @@ export default function AdminOrders() {
     });
   }, [orders, selectedStatus, searchTerm]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStatus, searchTerm, orders.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE));
+  const pageStart = (currentPage - 1) * ITEMS_PER_PAGE;
+  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, filteredOrders.length);
+  const paginatedOrders = filteredOrders.slice(pageStart, pageEnd);
+
   // Memoized statistics to prevent unnecessary calculations
   const stats = useMemo(() => {
     const pendingCount = orders.filter(order => order.status === 'pending').length;
     
     return { pendingCount };
   }, [orders]);
+
+  // Fetch supplier display data (name + logo) by supplier identifier.
+  // Note: `order.supplier` can be either supplier doc id (e.g. SUPPLIER-xxxx-xxxx) OR companyName.
+  const fetchSupplierMeta = useCallback(async (supplierRefs: string[]) => {
+    if (supplierRefs.length === 0) return { nameMap: {}, logoMap: {} };
+
+    try {
+      const uniqueRefs = Array.from(new Set(supplierRefs.filter(Boolean)));
+      if (uniqueRefs.length === 0) return { nameMap: {}, logoMap: {} };
+
+      const looksLikeSupplierId = (value: string) => value.startsWith('SUPPLIER-');
+      const supplierIds = uniqueRefs.filter(looksLikeSupplierId);
+      const supplierCompanyNames = uniqueRefs.filter((v) => !looksLikeSupplierId(v));
+
+      const nameMap: Record<string, string> = {};
+      const logoMap: Record<string, string> = {};
+
+      // Helper: batch arrays into chunks of 10 for Firestore `in` queries
+      const chunk10 = (arr: string[]) => {
+        const batches: string[][] = [];
+        for (let i = 0; i < arr.length; i += 10) {
+          batches.push(arr.slice(i, i + 10));
+        }
+        return batches;
+      };
+
+      // 1) Fetch suppliers by doc id (fast path)
+      for (const batch of chunk10(supplierIds)) {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('role', '==', 'supplier'), where('__name__', 'in', batch));
+        const snapshot = await getDocs(q);
+
+        snapshot.docs.forEach((docSnap) => {
+          const data: any = docSnap.data();
+          if (data?.companyName) {
+            nameMap[docSnap.id] = data.companyName;
+          }
+          if (data?.logo) {
+            logoMap[docSnap.id] = data.logo;
+          }
+        });
+      }
+
+      // 2) Fetch suppliers by companyName (fallback path)
+      for (const batch of chunk10(supplierCompanyNames)) {
+        const usersRef = collection(db, 'users');
+        try {
+          const q = query(usersRef, where('role', '==', 'supplier'), where('companyName', 'in', batch));
+          const snapshot = await getDocs(q);
+          snapshot.docs.forEach((docSnap) => {
+            const data: any = docSnap.data();
+            const key = data?.companyName;
+            if (key) {
+              nameMap[key] = key;
+              if (data?.logo) {
+                logoMap[key] = data.logo;
+              }
+            }
+          });
+        } catch (err) {
+          // If a composite index is missing, fall back to companyName-only query then filter role client-side.
+          try {
+            const q2 = query(usersRef, where('companyName', 'in', batch));
+            const snapshot2 = await getDocs(q2);
+            snapshot2.docs.forEach((docSnap) => {
+              const data: any = docSnap.data();
+              if (data?.role !== 'supplier') return;
+              const key = data?.companyName;
+              if (key) {
+                nameMap[key] = key;
+                if (data?.logo) {
+                  logoMap[key] = data.logo;
+                }
+              }
+            });
+          } catch (err2) {
+            // ignore
+          }
+        }
+      }
+
+      return { nameMap, logoMap };
+    } catch (error) {
+      console.error('Error fetching supplier meta from Firestore:', error);
+      return { nameMap: {}, logoMap: {} };
+    }
+  }, []);
 
   // Fetch orders: try all (admin), fallback to own if permission denied
   const fetchOrders = useCallback(async (showLoading = true) => {
@@ -173,17 +279,18 @@ export default function AdminOrders() {
           deliveryDate: new Date(order.deliveryDate)
         }));
 
-        // Check if there are changes
-        const hasChanges =
-          orders.length !== fetchedOrders.length ||
-          fetchedOrders.some((order: any, idx: number) => {
-            const prev = orders[idx];
-            return !prev || prev.id !== order.id || prev.updatedAt.getTime() !== order.updatedAt.getTime() || prev.status !== order.status;
-          });
-
-        if (hasChanges) {
-          setOrders(fetchedOrders);
-          setLastUpdate(new Date());
+        setOrders(fetchedOrders);
+        setLastUpdate(new Date());
+        
+        // Fetch supplier names for all orders
+        const supplierIds = fetchedOrders
+          .map(order => order.supplier)
+          .filter((id): id is string => Boolean(id));
+        
+        if (supplierIds.length > 0) {
+          const meta = await fetchSupplierMeta(supplierIds);
+          setSupplierNames(prev => ({ ...prev, ...meta.nameMap }));
+          setSupplierLogos(prev => ({ ...prev, ...meta.logoMap }));
         }
       } else {
         console.error('Failed to fetch orders:', data.error);
@@ -200,67 +307,17 @@ export default function AdminOrders() {
         setIsUpdating(false);
       }
     }
-  }, [orders]);
+  }, [fetchSupplierMeta]);
 
   // Set client-side flag
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Fetch orders from Firestore with optimized polling
+  // Fetch orders from API (manual refresh; no auto polling)
   useEffect(() => {
-    const fetchOrdersImmediately = async () => {
-      try {
-        console.log('Fetching orders for admin...');
-        const ordersRef = collection(db, 'orders');
-        const snapshot = await getDocs(ordersRef);
-        
-        console.log('Orders fetched successfully:', snapshot.size);
-        const fetchedOrders: Order[] = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            userId: data.userId || '',
-            firebaseUid: data.firebaseUid || '',
-            userEmail: data.userEmail || '',
-            restaurantName: data.restaurantName || '',
-            items: data.items || [],
-            totalAmount: data.totalAmount || 0,
-            status: data.status || 'pending',
-            deliveryDate: data.deliveryDate?.toDate?.() || new Date(),
-            deliveryAddress: data.deliveryAddress || {
-              street: '',
-              city: '',
-              state: '',
-              zipCode: ''
-            },
-            notes: data.notes || '',
-            source: data.source || '',
-            createdAt: data.createdAt?.toDate?.() || new Date(),
-            updatedAt: data.updatedAt?.toDate?.() || new Date()
-          };
-        });
-        
-        setOrders(fetchedOrders);
-        setLastUpdate(new Date());
-      } catch (error) {
-        console.error('Error fetching orders:', error);
-        setOrders([]);
-      } finally {
-        setLoading(false);
-        setIsUpdating(false);
-      }
-    };
-    
-    fetchOrdersImmediately();
-    
-    // Set up polling every 15 seconds
-    const interval = setInterval(() => {
-      fetchOrdersImmediately();
-    }, 15000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    fetchOrders(true);
+  }, [fetchOrders]);
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     try {
@@ -320,15 +377,27 @@ export default function AdminOrders() {
                 管理所有客戶訂單和配送狀態
               </p>
             </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <div className="flex items-center space-x-3 text-sm text-gray-500">
               <div className={`w-2 h-2 rounded-full ${isUpdating ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
-              <span>{isUpdating ? '更新中...' : '即時更新'}</span>
+              <span>{isUpdating ? '更新中...' : '手動更新'}</span>
               <span className="text-xs text-gray-400">
                 {isClient && lastUpdate ? lastUpdate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
               </span>
-              <span className="text-xs text-gray-400">
-                • 15秒輪詢 • 智能緩存
-              </span>
+              <button
+                onClick={() => fetchOrders(true)}
+                disabled={isUpdating}
+                title="重新整理列表"
+                aria-label="重新整理列表"
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity hover:opacity-90"
+                style={{ backgroundColor: '#0B8628' }}
+              >
+                {isUpdating ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span>重新整理</span>
+              </button>
             </div>
           </div>
         </div>
@@ -404,19 +473,39 @@ export default function AdminOrders() {
 
         {/* Orders List */}
         <div className="space-y-6">
-          {filteredOrders.map((order) => (
+          {paginatedOrders.map((order) => (
             <div key={order.id} className="card p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="flex items-center space-x-2">
                     <h3 className="text-lg font-semibold text-gray-900">訂單 #{order.id}</h3>
                   </div>
-                  <p className="text-sm text-gray-600">
-                    創建於 {typeof order.createdAt === 'string' ? new Date(order.createdAt).toLocaleDateString('zh-TW') : order.createdAt.toLocaleDateString('zh-TW')}
-                    {order.userEmail && (
-                      <span className="ml-2">• {order.userEmail}</span>
+                  <div className="space-y-1">
+                    <p className="text-sm text-gray-600">
+                      購買於{' '}
+                      {typeof order.createdAt === 'string'
+                        ? new Date(order.createdAt).toLocaleDateString('zh-TW')
+                        : order.createdAt.toLocaleDateString('zh-TW')}
+                      {order.userEmail && <span className="ml-2">• {order.userEmail}</span>}
+                    </p>
+                    {order.supplier && (
+                      <p className="text-sm text-gray-600">
+                        <span className="inline-flex items-center gap-2 ml-1 font-medium text-gray-900">
+                          {supplierLogos[order.supplier] ? (
+                            <img
+                              src={supplierLogos[order.supplier]}
+                              alt="Supplier logo"
+                              className="w-20 h-20 rounded-full object-cover border border-gray-200 bg-white"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="w-20 h-20 rounded-full bg-gray-200 border border-gray-200 inline-block" />
+                          )}
+                          <span>{supplierNames[order.supplier] || order.supplier}</span>
+                        </span>
+                      </p>
                     )}
-                  </p>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-4">
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[order.status]}`}>
@@ -434,78 +523,124 @@ export default function AdminOrders() {
                     <option value="delivered">已送達</option>
                     <option value="cancelled">已取消</option>
                   </select>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedOrderId((prev) => (prev === order.id ? null : order.id))
+                    }
+                    className="inline-flex items-center px-3 py-1 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    aria-expanded={expandedOrderId === order.id}
+                    aria-label={expandedOrderId === order.id ? '收起訂單詳情' : '展開訂單詳情'}
+                  >
+                    <span className="mr-1">
+                      {expandedOrderId === order.id ? '收起' : '展開'}
+                    </span>
+                    {expandedOrderId === order.id ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Order Items */}
-              <div className="mb-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">訂單項目:</h4>
-                <div className="space-y-2">
-                  {order.items.map((item, index) => {
-                    const totalPrice = item.totalPrice || (item.quantity * item.unitPrice) || 0;
-                    return (
-                      <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
-                            <Package className="w-5 h-5 text-gray-400" />
+              {expandedOrderId === order.id && (
+                <>
+                  {/* Order Items */}
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">訂單項目:</h4>
+                    <div className="space-y-2">
+                      {order.items.map((item, index) => {
+                        const totalPrice = item.totalPrice || (item.quantity * item.unitPrice) || 0;
+                        return (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between py-2 border-b border-gray-100"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                                <Package className="w-5 h-5 text-gray-400" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{item.productName}</p>
+                                <p className="text-sm text-gray-600">
+                                  數量: {item.quantity}
+                                  <span className="ml-2">
+                                    單價: ${(item.unitPrice || 0).toFixed(2)} /{' '}
+                                    {item.unit || '單位'}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+                            <p className="font-medium text-gray-900">
+                              ${totalPrice.toFixed(2)}
+                            </p>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{item.productName}</p>
-                            <p className="text-sm text-gray-600">數量: {item.quantity}</p>
-                          </div>
-                        </div>
-                        <p className="font-medium text-gray-900">${totalPrice.toFixed(2)}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Order Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">配送資訊:</h4>
-                  <div className="space-y-1 text-sm text-gray-600">
-                    {order.restaurantName && (
-                      <div className="flex items-center space-x-2">
-                        <User className="w-4 h-4" />
-                        <span className="font-medium">{order.restaurantName}</span>
-                      </div>
-                    )}
-                    {order.deliveryAddress && (
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="w-4 h-4" />
-                        <span>
-                          {order.deliveryAddress.street || ''} 
-                          {order.deliveryAddress.city ? `, ${order.deliveryAddress.city}` : ''}
-                          {order.deliveryAddress.state ? `, ${order.deliveryAddress.state}` : ''}
-                          {order.deliveryAddress.zipCode ? ` ${order.deliveryAddress.zipCode}` : ''}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="w-4 h-4" />
-                      <span>預計送達: {typeof order.deliveryDate === 'string' ? new Date(order.deliveryDate).toLocaleDateString('zh-TW') : order.deliveryDate.toLocaleDateString('zh-TW')}</span>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
 
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">訂單摘要:</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between border-t pt-1">
-                      <span className="font-medium">總計:</span>
-                      <span className="font-bold text-lg">${(order.totalAmount || 0).toFixed(2)}</span>
+                  {/* Order Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">送貨資訊:</h4>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        {order.restaurantName && (
+                          <div className="flex items-center space-x-2">
+                            <User className="w-4 h-4" />
+                            <span className="font-medium">{order.restaurantName}</span>
+                          </div>
+                        )}
+                        {order.deliveryAddress && (
+                          <div className="flex items-center space-x-2">
+                            <MapPin className="w-4 h-4" />
+                            <span>
+                              {order.deliveryAddress.street || ''}
+                              {order.deliveryAddress.city
+                                ? `, ${order.deliveryAddress.city}`
+                                : ''}
+                              {order.deliveryAddress.state
+                                ? `, ${order.deliveryAddress.state}`
+                                : ''}
+                              {order.deliveryAddress.zipCode
+                                ? ` ${order.deliveryAddress.zipCode}`
+                                : ''}
+                            </span>
+                          </div>
+                        )}
+                        {order.deliveryDate && (
+                          <div className="flex items-center space-x-2">
+                            <Calendar className="w-4 h-4" />
+                            <span>
+                              送貨日期：
+                              {format(
+                                new Date(order.deliveryDate as any),
+                                'MM-dd-yyyy, EEEE',
+                                { locale: zhTW }
+                              )}
+                            </span>
+                          </div>
+                        )}
+                        {order.deliveryTime && (
+                          <div className="flex items-center space-x-2">
+                            <Clock className="w-4 h-4" />
+                            <span>
+                              送貨時間：{order.deliveryTime}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {order.notes && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                  <h4 className="text-sm font-medium text-gray-700 mb-1">備註:</h4>
-                  <p className="text-sm text-gray-600">{order.notes}</p>
-                </div>
+                  {order.notes && (
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                      <h4 className="text-sm font-medium text-gray-700 mb-1">備註:</h4>
+                      <p className="text-sm text-gray-600">{order.notes}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ))}
@@ -520,6 +655,34 @@ export default function AdminOrders() {
             </div>
           )}
         </div>
+
+        {filteredOrders.length > 0 && (
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-sm text-gray-600">
+              顯示第 <span className="font-medium">{filteredOrders.length === 0 ? 0 : pageStart + 1}</span>-
+              <span className="font-medium"> {pageEnd}</span> 筆，共 <span className="font-medium">{filteredOrders.length}</span> 筆
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                上一頁
+              </button>
+              <span className="text-sm text-gray-600">
+                第 <span className="font-medium">{currentPage}</span> / {totalPages} 頁
+              </span>
+              <button
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                下一頁
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

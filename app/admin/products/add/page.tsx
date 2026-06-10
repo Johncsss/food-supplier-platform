@@ -31,6 +31,7 @@ interface ProductFormData {
   supplier: string;
   description: string;
   imageUrls: string[];
+  showOnHomepage: boolean;
 }
 
 export default function AddProduct() {
@@ -52,6 +53,7 @@ export default function AddProduct() {
       stockQuantity: 0,
       minOrderQuantity: 1,
       maxOrderQuantity: 0,
+      showOnHomepage: false,
     }
   });
 
@@ -164,6 +166,7 @@ export default function AddProduct() {
         imageUrl: data.imageUrls && data.imageUrls.length > 0 ? data.imageUrls[0] : '', // Keep first image for backward compatibility
         imageUrls: data.imageUrls || [], // Store all images
         isAvailable: true,
+        showOnHomepage: Boolean(data.showOnHomepage),
         supplier: data.supplier,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -316,6 +319,18 @@ export default function AddProduct() {
                   <option value="盒">盒</option>
                   <option value="箱">箱</option>
                   <option value="個">個</option>
+                  <option value="扎">扎</option>
+                  <option value="枝">枝</option>
+                  <option value="件">件</option>
+                  <option value="排">排</option>
+                  <option value="両">両</option>
+                  <option value="條">條</option>
+                  <option value="隻">隻</option>
+                  <option value="罐">罐</option>
+                  <option value="打">打</option>
+                  <option value="公升">公升</option>
+                  <option value="加侖">加侖</option>
+                  <option value="支">支</option>
                 </select>
                 {errors.unit && (
                   <p className="text-red-500 text-sm mt-1">{errors.unit.message}</p>
@@ -439,6 +454,21 @@ export default function AddProduct() {
                   type="hidden"
                 />
               </div>
+
+            <div className="flex items-start space-x-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <input
+                id="showOnHomepage"
+                type="checkbox"
+                className="mt-1 h-5 w-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                {...register('showOnHomepage')}
+              />
+              <div>
+                <label htmlFor="showOnHomepage" className="font-medium text-gray-900">
+                  顯示於首頁
+                </label>
+                <p className="text-sm text-gray-600">啟用後，此產品會顯示在首頁精選產品區域</p>
+              </div>
+            </div>
 
             <div className="flex justify-end space-x-4 pt-6">
               <Link href="/admin/products" className="btn-outline">

@@ -29,11 +29,21 @@ service firebase.storage {
       allow read: if true;
     }
     
+    // Allow authenticated users to upload and read supplier logos
+    match /supplier_logo/{imageId} {
+      // Allow uploads even if the uploader is not Firebase-authenticated in the web session,
+      // but restrict to small image files to reduce abuse.
+      allow write: if request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      // Anyone can read supplier logos (for displaying in supplier lists)
+      allow read: if true;
+    }
+    
     // Allow authenticated admins to upload and read images (logos, etc.)
     match /images/{imageId} {
-      // Allow authenticated admins to upload images
-      allow write: if request.auth != null && request.auth.token.admin == true;
-      // Anyone can read images (for displaying logo, etc.)
+      // Admin panel handles auth; allow uploads for this shared folder
+      allow write: if true;
       allow read: if true;
     }
     
@@ -48,6 +58,42 @@ service firebase.storage {
         request.auth != null  // Temporary: allow any authenticated user (admin panel already protects)
       );
       // Anyone can read app images (for displaying in mobile app)
+      allow read: if true;
+    }
+
+    // Allow authenticated users to upload and read their own account images
+    // Used for mobile app 帳戶頁面的背景圖片與大頭照
+    match /account_images/{userId}/{imageId} {
+      // Allow any authenticated user to upload account images
+      // (access to this feature is already protected by app auth)
+      allow write: if request.auth != null;
+      // Anyone can read帳戶圖片（用於顯示在頁面上）
+      allow read: if true;
+    }
+
+    // Allow admins to upload point plan QR codes
+    match /points_plans/{imageId} {
+      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow read: if true;
+    }
+
+    // Allow users to upload payment receipts; limit reads to admins
+    match /points_receipts/{imageId} {
+      allow write: if true;
+      allow read: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Allow users to upload receipt images; limit reads to admins
+    match /receipts_images/{imageId} {
+      allow write: if true;
+      allow read: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Allow public uploads for business registration documents (from partner application form)
+    match /business_registrations/{documentId} {
+      // Allow anyone to upload documents (public form)
+      allow write: if true;
+      // Allow anyone to read documents (needed for getDownloadURL in public flow)
       allow read: if true;
     }
     

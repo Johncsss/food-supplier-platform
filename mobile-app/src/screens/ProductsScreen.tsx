@@ -11,12 +11,14 @@ import {
   Alert,
   RefreshControl
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useCart } from '../hooks/useCart';
 import { Product } from '../../../shared/types';
 import { db } from '../../../shared/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
 const ProductsScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { addToCart, totalItems } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,12 +70,6 @@ const ProductsScreen: React.FC = () => {
 
   const handleAddToCart = (product: Product) => {
     addToCart(product);
-    // Show success feedback
-    Alert.alert(
-      '已加入購物車',
-      `${product.name} 已成功加入購物車`,
-      [{ text: '確定' }]
-    );
   };
 
   const renderProduct = ({ item }: { item: Product }) => (

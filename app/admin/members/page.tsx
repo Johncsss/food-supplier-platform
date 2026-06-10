@@ -1,32 +1,28 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Filter, 
-  Eye, 
-  Edit, 
-  ArrowLeft,
+import {
+  Search,
+  Eye,
+  Edit,
   Mail,
   Phone,
   MapPin,
   Users,
-  TrendingUp,
-  DollarSign,
   Calendar,
   CheckCircle,
   AlertCircle,
   Clock,
   X,
-  CreditCard,
   Package,
-  Activity,
-  UserPlus
+  UserPlus,
+  Coins,
+  Trash2,
+  PackagePlus,
 } from 'lucide-react';
 import Link from 'next/link';
-import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 
 interface Member {
   id: string;
@@ -35,11 +31,69 @@ interface Member {
   email: string;
   phone: string;
   membershipStatus: 'active' | 'inactive' | 'expired';
-  membershipPlan: string;
+  membershipPlan?: string;
   joinDate: string;
   address: string;
   totalOrders: number;
   totalSpent: number;
+  role?: string | null;
+  firebaseUid?: string | null;
+  // Optional nested info used throughout this page
+  companyInfo?: {
+    nameEn?: string;
+    nameZh?: string;
+    addressEn?: string;
+    addressZh?: string;
+  };
+  shopInfo?: {
+    nameEn?: string;
+    nameZh?: string;
+    addressEn?: string;
+    addressZh?: string;
+  };
+  contactInfo?: {
+    name?: string;
+    title?: string;
+    phone?: string;
+    fax?: string;
+    email?: string;
+  };
+  accountingContact?: {
+    name?: string;
+    title?: string;
+    phone?: string;
+    fax?: string;
+    email?: string;
+  };
+  businessInfo?: {
+    registrationNumber?: string;
+    nature?: string;
+    companyStatus?: string;
+    propertyStatus?: string;
+  };
+  businessRegistrationFileUrl?: string;
+  staffName?: string;
+}
+
+interface OrderSummary {
+  id: string;
+  createdAt: Date | null;
+  totalAmount: number;
+  status: string;
+}
+
+interface PointTransactionSummary {
+  id: string;
+  createdAt: Date | null;
+  points: number;
+  amount?: number;
+  type?: string;
+  status?: string;
+  description?: string;
+  newBalance?: number;
+  previousBalance?: number;
+  receiptUrl?: string;
+  planId?: string | null;
 }
 
 export default function AdminMembers() {
@@ -52,26 +106,100 @@ export default function AdminMembers() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [editForm, setEditForm] = useState({
-    name: '',
-    restaurantName: '',
-    email: '',
-    phone: '',
-    membershipStatus: 'active' as 'active' | 'inactive' | 'expired',
-    membershipPlan: '',
-    address: ''
+    companyNameEn: '',
+    companyNameZh: '',
+    companyAddressEn: '',
+    companyAddressZh: '',
+    shopNameEn: '',
+    shopNameZh: '',
+    shopAddressEn: '',
+    shopAddressZh: '',
+    contactName: '',
+    contactTitle: '',
+    contactPhone: '',
+    contactFax: '',
+    contactEmail: '',
+    accountingName: '',
+    accountingTitle: '',
+    accountingPhone: '',
+    accountingFax: '',
+    accountingEmail: '',
+    businessRegNumber: '',
+    businessNature: '',
+    companyStatus: '',
+    propertyStatus: '',
+    membershipStatus: 'active' as 'active' | 'inactive',
+    password: '',
+    confirmPassword: '',
+    businessRegistrationFile: null as File | null,
+    businessRegistrationFileUrl: '',
+    staffName: '',
   });
   const [addForm, setAddForm] = useState({
-    name: '',
-    restaurantName: '',
-    email: '',
+    companyNameEn: '',
+    companyNameZh: '',
+    companyAddressEn: '',
+    companyAddressZh: '',
+    shopNameEn: '',
+    shopNameZh: '',
+    shopAddressEn: '',
+    shopAddressZh: '',
+    contactName: '',
+    contactTitle: '',
+    contactPhone: '',
+    contactFax: '',
+    contactEmail: '',
+    accountingName: '',
+    accountingTitle: '',
+    accountingPhone: '',
+    accountingFax: '',
+    accountingEmail: '',
+    businessRegNumber: '',
+    businessNature: '',
+    companyStatus: '',
+    propertyStatus: '',
     password: '',
-    phone: '',
-    membershipStatus: 'active' as 'active' | 'inactive' | 'expired',
-    membershipPlan: '基本方案',
-    address: ''
+    membershipStatus: 'active' as 'active' | 'inactive',
+    businessRegistrationFile: null as File | null,
+    staffName: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memberOrdersLoading, setMemberOrdersLoading] = useState(false);
+  const [memberOrderStats, setMemberOrderStats] = useState({
+    totalOrders: 0,
+    totalSpent: 0,
+  });
+  const [memberRecentOrders, setMemberRecentOrders] = useState<OrderSummary[]>([]);
+  const [memberPointsLoading, setMemberPointsLoading] = useState(false);
+  const [memberPointTransactions, setMemberPointTransactions] = useState<PointTransactionSummary[]>([]);
+  const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
+  const [salesNames, setSalesNames] = useState<string[]>([]);
+  const [loadingSalesNames, setLoadingSalesNames] = useState(false);
+
+  // Fetch sales names from Firestore
+  const fetchSalesNames = async () => {
+    try {
+      setLoadingSalesNames(true);
+      const salesMembersRef = collection(db, 'salesMembers');
+      const snapshot = await getDocs(salesMembersRef);
+      const names: string[] = [];
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        const name = data.name;
+        if (name && typeof name === 'string' && name.trim() && !names.includes(name.trim())) {
+          names.push(name.trim());
+        }
+      });
+      // Sort names alphabetically
+      names.sort();
+      setSalesNames(names);
+    } catch (error) {
+      console.error('Error fetching sales names:', error);
+    } finally {
+      setLoadingSalesNames(false);
+    }
+  };
 
   // Fetch members from Firestore
   useEffect(() => {
@@ -79,7 +207,9 @@ export default function AdminMembers() {
       try {
         setLoading(true);
         const usersRef = collection(db, 'users');
-        const snapshot = await getDocs(usersRef);
+        // Order by createdAt so newest members appear first
+        const usersQuery = query(usersRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(usersQuery);
         const fetchedMembers: Member[] = snapshot.docs
           .filter((doc) => {
             const data = doc.data();
@@ -96,11 +226,27 @@ export default function AdminMembers() {
               phone: data.phone || '',
               membershipStatus: data.membershipStatus || 'inactive',
               membershipPlan: data.membershipPlan || '基本方案',
-              joinDate: data.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
-              address: typeof data.address === 'string' ? data.address : 
-                       data.address ? `${data.address.street}, ${data.address.city}, ${data.address.state} ${data.address.zipCode}` : '',
+              joinDate:
+                data.createdAt?.toDate?.()?.toISOString()?.split('T')[0] ||
+                new Date().toISOString().split('T')[0],
+              address:
+                typeof data.address === 'string'
+                  ? data.address
+                  : data.address
+                  ? `${data.address.street}, ${data.address.city}, ${data.address.state} ${data.address.zipCode}`
+                  : '',
               totalOrders: data.totalOrders || 0,
               totalSpent: data.totalSpent || 0,
+              role: data.role || null,
+              firebaseUid: data.firebaseUid || data.firebaseUserId || null,
+              // Include nested data structures
+              companyInfo: data.companyInfo || undefined,
+              shopInfo: data.shopInfo || undefined,
+              contactInfo: data.contactInfo || undefined,
+              accountingContact: data.accountingContact || undefined,
+              businessInfo: data.businessInfo || undefined,
+              businessRegistrationFileUrl: data.businessRegistrationFileUrl && data.businessRegistrationFileUrl.trim() ? data.businessRegistrationFileUrl : undefined,
+              staffName: data.staffName || '',
             };
           });
         setMembers(fetchedMembers);
@@ -112,14 +258,27 @@ export default function AdminMembers() {
     };
 
     fetchMembers();
+    fetchSalesNames();
   }, []);
 
   const filteredMembers = members.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch =
+      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          member.restaurantName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          member.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || member.membershipStatus === statusFilter;
-    return matchesSearch && matchesStatus;
+
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'active' && member.membershipStatus === 'active') ||
+      (statusFilter === 'inactive' && member.membershipStatus !== 'active');
+
+    const isRestaurantMember =
+      !member.role ||
+      member.role === 'restaurant' ||
+      member.role === 'member' ||
+      member.role === 'customer';
+
+    return matchesSearch && matchesStatus && isRestaurantMember;
   });
 
   const getStatusColor = (status: string) => {
@@ -127,7 +286,7 @@ export default function AdminMembers() {
       case 'active':
         return 'text-green-600 bg-green-100 border-green-200';
       case 'inactive':
-        return 'text-gray-600 bg-gray-100 border-gray-200';
+        return 'text-yellow-600 bg-yellow-100 border-yellow-200';
       case 'expired':
         return 'text-red-600 bg-red-100 border-red-200';
       default:
@@ -151,13 +310,70 @@ export default function AdminMembers() {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'active':
-        return '活躍';
+        return '有效';
       case 'inactive':
-        return '非活躍';
+        return '未啟用';
       case 'expired':
-        return '已過期';
+        return '已到期';
       default:
         return '未知';
+    }
+  };
+
+  const getOrderStatusText = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return '待處理';
+      case 'confirmed':
+        return '已確認';
+      case 'processing':
+        return '處理中';
+      case 'shipped':
+        return '已出貨';
+      case 'delivered':
+        return '已送達';
+      case 'cancelled':
+        return '已取消';
+      default:
+        return status || '未知';
+    }
+  };
+
+  const formatDateTime = (date: Date | null) => {
+    if (!date) return '--';
+    return date.toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return '--';
+    }
+    return `HK$ ${value.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const getPointsStatusText = (status?: string) => {
+    switch (status) {
+      case 'completed':
+        return '已完成';
+      case 'pending':
+        return '處理中';
+      case 'rejected':
+        return '已拒絕';
+      case 'cancelled':
+        return '已取消';
+      case 'approved':
+        return '已審核';
+      default:
+        return status || '未知';
     }
   };
 
@@ -168,59 +384,500 @@ export default function AdminMembers() {
     expired: members.filter(m => m.membershipStatus === 'expired').length,
   };
 
+  const getRoleText = (role?: string | null) => {
+    if (!role) return '餐廳';
+    switch (role) {
+      case 'admin':
+        return '管理員';
+      case 'supplier':
+        return '供應商';
+      case 'salesTeam':
+        return '銷售團隊';
+      case 'salesMember':
+        return '銷售成員';
+      default:
+        return role || '餐廳';
+    }
+  };
+
   const totalRevenue = members.reduce((sum, member) => sum + member.totalSpent, 0);
   const totalOrders = members.reduce((sum, member) => sum + member.totalOrders, 0);
 
-  const handleViewMember = (member: Member) => {
-    setSelectedMember(member);
+  useEffect(() => {
+    if (!showViewModal || !selectedMember) {
+      return;
+    }
+
+    const identifiers = Array.from(
+      new Set(
+        [selectedMember.id, selectedMember.firebaseUid].filter(
+          (value): value is string => typeof value === 'string' && value.trim().length > 0,
+        ),
+      ),
+    );
+
+    const fetchMemberOrders = async () => {
+      setMemberOrdersLoading(true);
+      try {
+        const ordersMap = new Map<string, OrderSummary>();
+        let totalSpentAccumulator = 0;
+
+        await Promise.all(
+          identifiers.map(async (uid) => {
+            const ordersQuery = query(collection(db, 'orders'), where('userId', '==', uid));
+            const snapshot = await getDocs(ordersQuery);
+            snapshot.docs.forEach((docSnap) => {
+              if (ordersMap.has(docSnap.id)) {
+                return;
+              }
+              const data = docSnap.data() as any;
+              const createdAt =
+                data.createdAt?.toDate?.() ||
+                data.transactionDate?.toDate?.() ||
+                data.deliveryDate?.toDate?.() ||
+                null;
+              const amount =
+                typeof data.totalAmount === 'number'
+                  ? data.totalAmount
+                  : Number(data.totalAmount || 0);
+              ordersMap.set(docSnap.id, {
+                id: docSnap.id,
+                createdAt,
+                totalAmount: amount,
+                status: data.status || 'pending',
+              });
+              totalSpentAccumulator += amount;
+            });
+          }),
+        );
+
+        const orders = Array.from(ordersMap.values()).sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
+        const derivedTotalSpent =
+          orders.length > 0 ? totalSpentAccumulator : selectedMember.totalSpent || 0;
+
+        setMemberOrderStats({
+          totalOrders: orders.length > 0 ? orders.length : selectedMember.totalOrders || 0,
+          totalSpent: Number(derivedTotalSpent.toFixed(2)),
+        });
+        setMemberRecentOrders(orders.slice(0, 5));
+      } catch (error) {
+        console.error('Failed to fetch member orders:', error);
+        setMemberOrderStats({
+          totalOrders: selectedMember.totalOrders || 0,
+          totalSpent: selectedMember.totalSpent || 0,
+        });
+        setMemberRecentOrders([]);
+      } finally {
+        setMemberOrdersLoading(false);
+      }
+    };
+
+    const fetchPointTransactions = async () => {
+      setMemberPointsLoading(true);
+      try {
+        const transactionMap = new Map<string, PointTransactionSummary>();
+
+        await Promise.all(
+          identifiers.map(async (uid) => {
+            const transactionsQuery = query(
+              collection(db, 'point_transactions'),
+              where('userId', '==', uid),
+            );
+            const snapshot = await getDocs(transactionsQuery);
+            snapshot.docs.forEach((docSnap) => {
+              if (transactionMap.has(docSnap.id)) {
+                return;
+              }
+              const data = docSnap.data() as any;
+              const createdAt =
+                data.transactionDate?.toDate?.() ||
+                data.createdAt?.toDate?.() ||
+                data.purchaseDate?.toDate?.() ||
+                null;
+              const points =
+                typeof data.pointsPurchased === 'number'
+                  ? data.pointsPurchased
+                  : typeof data.points === 'number'
+                    ? data.points
+                    : typeof data.pointsAmount === 'number'
+                      ? data.pointsAmount
+                      : 0;
+              const amount =
+                typeof data.paymentAmount === 'number'
+                  ? data.paymentAmount
+                  : typeof data.amount === 'number'
+                    ? data.amount
+                    : undefined;
+              transactionMap.set(docSnap.id, {
+                id: docSnap.id,
+                createdAt,
+                points,
+                amount,
+                type: data.type || '',
+                status: data.status || '',
+                description: data.description || '',
+                newBalance:
+                  typeof data.newBalance === 'number' ? data.newBalance : undefined,
+                previousBalance:
+                  typeof data.previousBalance === 'number'
+                    ? data.previousBalance
+                    : undefined,
+                receiptUrl: data.receiptUrl || '',
+                planId: data.planId || null,
+              });
+            });
+          }),
+        );
+
+        const transactions = Array.from(transactionMap.values()).sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
+        setMemberPointTransactions(transactions.slice(0, 10));
+      } catch (error) {
+        console.error('Failed to fetch point transactions:', error);
+        setMemberPointTransactions([]);
+      } finally {
+        setMemberPointsLoading(false);
+      }
+    };
+
+    fetchMemberOrders();
+    fetchPointTransactions();
+  }, [showViewModal, selectedMember]);
+
+  const handleViewMember = async (member: Member) => {
     setShowViewModal(true);
+    setMemberOrdersLoading(true);
+    setMemberPointsLoading(true);
+    
+    // Fetch full member data from Firestore to ensure we have all fields including businessRegistrationFileUrl
+    try {
+      const usersRef = collection(db, 'users');
+      const usersSnapshot = await getDocs(usersRef);
+      
+      let fullMemberData: Member | null = null;
+      usersSnapshot.docs.forEach((doc) => {
+        const userData = doc.data();
+        const userId = userData.id || doc.id;
+        const firebaseUid = userData.firebaseUid || userId;
+        
+        if (userId === member.id || firebaseUid === member.firebaseUid || firebaseUid === member.id) {
+          fullMemberData = {
+            ...member,
+            businessRegistrationFileUrl:
+              userData.businessRegistrationFileUrl && userData.businessRegistrationFileUrl.trim()
+                ? userData.businessRegistrationFileUrl
+                : undefined,
+            businessInfo: userData.businessInfo || member.businessInfo,
+            companyInfo: userData.companyInfo || member.companyInfo,
+            shopInfo: userData.shopInfo || member.shopInfo,
+            contactInfo: userData.contactInfo || member.contactInfo,
+            accountingContact: userData.accountingContact || member.accountingContact,
+            staffName: userData.staffName || member.staffName,
+          };
+        }
+      });
+      
+      // Use full member data if found, otherwise use the member from list
+      const memberToDisplay = fullMemberData || member;
+      
+      // Debug: log the member data to see if businessRegistrationFileUrl is present
+      console.log('Viewing member:', {
+        id: memberToDisplay.id,
+        name: memberToDisplay.name,
+        businessRegistrationFileUrl: memberToDisplay.businessRegistrationFileUrl,
+        businessInfo: memberToDisplay.businessInfo,
+      });
+      
+      setSelectedMember(memberToDisplay);
+      setMemberOrderStats({
+        totalOrders: memberToDisplay.totalOrders || 0,
+        totalSpent: memberToDisplay.totalSpent || 0,
+      });
+      setMemberRecentOrders([]);
+      setMemberPointTransactions([]);
+    } catch (error) {
+      console.error('Error fetching full member data:', error);
+      // Fallback to using member from list if fetch fails
+      setSelectedMember(member);
+      setMemberOrderStats({
+        totalOrders: member.totalOrders || 0,
+        totalSpent: member.totalSpent || 0,
+      });
+      setMemberRecentOrders([]);
+      setMemberPointTransactions([]);
+    }
   };
 
-  const handleEditMember = (member: Member) => {
+  const handleDeleteMember = async (member: Member) => {
+    const confirmed = window.confirm(`確定要刪除「${member.name || '此會員'}」嗎？此操作無法復原。`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingMemberId(member.id);
+      const isSelectedMember = selectedMember?.id === member.id;
+      const isEditing = showEditModal && selectedMember?.id === member.id;
+      const response = await fetch(`/api/admin/members/${member.id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || '刪除會員失敗');
+      }
+
+      setMembers((prev) => prev.filter((m) => m.id !== member.id));
+
+      if (isSelectedMember) {
+        setShowViewModal(false);
+        setSelectedMember(null);
+      }
+      if (isEditing) {
+        setShowEditModal(false);
+      }
+    } catch (error: any) {
+      console.error('Error deleting member:', error);
+      window.alert(error?.message || '刪除會員失敗，請稍後再試。');
+    } finally {
+      setDeletingMemberId(null);
+    }
+  };
+
+  const updateEditFormField = (field: keyof typeof editForm, value: string) => {
+    setEditForm(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+  const getString = (value: unknown): string => (typeof value === 'string' ? value : '');
+  const handleEditMember = async (member: Member) => {
     setSelectedMember(member);
-    setEditForm({
-      name: member.name,
-      restaurantName: member.restaurantName,
-      email: member.email,
-      phone: member.phone,
-      membershipStatus: member.membershipStatus,
-      membershipPlan: member.membershipPlan,
-      address: member.address
-    });
+    // Fetch sales names when opening edit modal
+    await fetchSalesNames();
+    
+    // Fetch member data to get staffName
+    try {
+      const usersRef = collection(db, 'users');
+      const usersSnapshot = await getDocs(usersRef);
+      let memberStaffName = '';
+      
+      usersSnapshot.docs.forEach((doc) => {
+        const userData = doc.data();
+        const userId = userData.id || doc.id;
+        const firebaseUid = userData.firebaseUid || userId;
+        
+        if (userId === member.id || firebaseUid === member.firebaseUid || firebaseUid === member.id) {
+          memberStaffName = userData.staffName || '';
+        }
+      });
+      
+      setEditForm({
+        companyNameEn: member.companyInfo?.nameEn || '',
+        companyNameZh: member.companyInfo?.nameZh || '',
+        companyAddressEn: member.companyInfo?.addressEn || member.address || '',
+        companyAddressZh: member.companyInfo?.addressZh || '',
+        shopNameEn: member.shopInfo?.nameEn || member.restaurantName || '',
+        shopNameZh: member.shopInfo?.nameZh || '',
+        shopAddressEn: member.shopInfo?.addressEn || member.address || '',
+        shopAddressZh: member.shopInfo?.addressZh || '',
+        contactName: member.contactInfo?.name || member.name || '',
+        contactTitle: member.contactInfo?.title || '',
+        contactPhone: member.contactInfo?.phone || member.phone || '',
+        contactFax: member.contactInfo?.fax || '',
+        contactEmail: member.contactInfo?.email || member.email || '',
+        accountingName: member.accountingContact?.name || '',
+        accountingTitle: member.accountingContact?.title || '',
+        accountingPhone: member.accountingContact?.phone || '',
+        accountingFax: member.accountingContact?.fax || '',
+        accountingEmail: member.accountingContact?.email || '',
+        businessRegNumber: getString(member.businessInfo?.registrationNumber),
+        businessNature: getString(member.businessInfo?.nature),
+        companyStatus: getString(member.businessInfo?.companyStatus),
+        propertyStatus: getString(member.businessInfo?.propertyStatus),
+        membershipStatus: member.membershipStatus === 'active' ? 'active' : 'inactive',
+        password: '',
+        confirmPassword: '',
+        businessRegistrationFile: null,
+        businessRegistrationFileUrl: member.businessRegistrationFileUrl || '',
+        staffName: memberStaffName,
+      });
+    } catch (error) {
+      console.error('Error fetching member data:', error);
+      setEditForm({
+        companyNameEn: member.companyInfo?.nameEn || '',
+        companyNameZh: member.companyInfo?.nameZh || '',
+        companyAddressEn: member.companyInfo?.addressEn || member.address || '',
+        companyAddressZh: member.companyInfo?.addressZh || '',
+        shopNameEn: member.shopInfo?.nameEn || member.restaurantName || '',
+        shopNameZh: member.shopInfo?.nameZh || '',
+        shopAddressEn: member.shopInfo?.addressEn || member.address || '',
+        shopAddressZh: member.shopInfo?.addressZh || '',
+        contactName: member.contactInfo?.name || member.name || '',
+        contactTitle: member.contactInfo?.title || '',
+        contactPhone: member.contactInfo?.phone || member.phone || '',
+        contactFax: member.contactInfo?.fax || '',
+        contactEmail: member.contactInfo?.email || member.email || '',
+        accountingName: member.accountingContact?.name || '',
+        accountingTitle: member.accountingContact?.title || '',
+        accountingPhone: member.accountingContact?.phone || '',
+        accountingFax: member.accountingContact?.fax || '',
+        accountingEmail: member.accountingContact?.email || '',
+        businessRegNumber: getString(member.businessInfo?.registrationNumber),
+        businessNature: getString(member.businessInfo?.nature),
+        companyStatus: getString(member.businessInfo?.companyStatus),
+        propertyStatus: getString(member.businessInfo?.propertyStatus),
+        membershipStatus: member.membershipStatus === 'active' ? 'active' : 'inactive',
+        password: '',
+        confirmPassword: '',
+        businessRegistrationFile: null,
+        businessRegistrationFileUrl: '',
+        staffName: '',
+      });
+    }
     setShowEditModal(true);
   };
 
   const handleSaveEdit = async () => {
-    if (selectedMember && editForm.name && editForm.restaurantName && editForm.email && editForm.phone && editForm.membershipPlan && editForm.address) {
+    if (selectedMember) {
+      if (editForm.password || editForm.confirmPassword) {
+        if (editForm.password.length < 6) {
+          setError('新密碼至少需要 6 個字元');
+          return;
+        }
+        if (editForm.password !== editForm.confirmPassword) {
+          setError('新密碼與確認密碼不一致');
+          return;
+        }
+      }
+
       try {
         setIsSubmitting(true);
         setError(null);
 
-        // Update in Firestore
-        const userRef = doc(db, 'users', selectedMember.id);
-        await updateDoc(userRef, {
-          name: editForm.name,
-          restaurantName: editForm.restaurantName,
-          email: editForm.email,
-          phone: editForm.phone,
-          membershipStatus: editForm.membershipStatus,
-          membershipPlan: editForm.membershipPlan,
-          address: editForm.address,
-          updatedAt: serverTimestamp()
+        // Upload new business registration file if provided
+        let businessRegistrationFileUrl = editForm.businessRegistrationFileUrl;
+        if (editForm.businessRegistrationFile) {
+          try {
+            const { uploadDocument } = await import('@/lib/image-upload');
+            const uploadResult = await uploadDocument(editForm.businessRegistrationFile, 'business_registrations');
+            if (!uploadResult.success || !uploadResult.url) {
+              throw new Error(uploadResult.error || '商業登記證上傳失敗');
+            }
+            businessRegistrationFileUrl = uploadResult.url;
+          } catch (uploadError: any) {
+            setError(uploadError?.message || '商業登記證上傳失敗');
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        const response = await fetch(`/api/admin/members/${selectedMember.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: editForm.contactName,
+            restaurantName: editForm.shopNameEn || editForm.shopNameZh,
+            email: editForm.contactEmail,
+            phone: editForm.contactPhone,
+            address: editForm.shopAddressEn || editForm.shopAddressZh,
+            companyInfo: {
+              nameEn: editForm.companyNameEn,
+              nameZh: editForm.companyNameZh,
+              addressEn: editForm.companyAddressEn,
+              addressZh: editForm.companyAddressZh,
+            },
+            shopInfo: {
+              nameEn: editForm.shopNameEn,
+              nameZh: editForm.shopNameZh,
+              addressEn: editForm.shopAddressEn,
+              addressZh: editForm.shopAddressZh,
+            },
+            contactInfo: {
+              name: editForm.contactName,
+              title: editForm.contactTitle,
+              phone: editForm.contactPhone,
+              fax: editForm.contactFax,
+              email: editForm.contactEmail,
+            },
+            accountingContact: {
+              name: editForm.accountingName,
+              title: editForm.accountingTitle,
+              phone: editForm.accountingPhone,
+              fax: editForm.accountingFax,
+              email: editForm.accountingEmail,
+            },
+            businessInfo: {
+              registrationNumber: editForm.businessRegNumber,
+              nature: editForm.businessNature,
+              companyStatus: editForm.companyStatus,
+              propertyStatus: editForm.propertyStatus,
+            },
+            membershipStatus: editForm.membershipStatus,
+            password: editForm.password ? editForm.password : undefined,
+            staffName: editForm.staffName,
+            businessRegistrationFileUrl: businessRegistrationFileUrl,
+          }),
         });
 
-        // Update local state
-        const updatedMembers = members.map(member =>
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || '更新會員失敗');
+        }
+
+        const updatedMembers = members.map((member) =>
           member.id === selectedMember.id
             ? {
                 ...member,
-                name: editForm.name,
-                restaurantName: editForm.restaurantName,
-                email: editForm.email,
-                phone: editForm.phone,
+                name: editForm.contactName,
+                restaurantName: editForm.shopNameEn || editForm.shopNameZh,
+                email: editForm.contactEmail,
+                phone: editForm.contactPhone,
                 membershipStatus: editForm.membershipStatus,
-                membershipPlan: editForm.membershipPlan,
-                address: editForm.address
+                address: editForm.shopAddressEn || editForm.shopAddressZh,
+                companyInfo: {
+                  nameEn: editForm.companyNameEn,
+                  nameZh: editForm.companyNameZh,
+                  addressEn: editForm.companyAddressEn,
+                  addressZh: editForm.companyAddressZh,
+                },
+                shopInfo: {
+                  nameEn: editForm.shopNameEn,
+                  nameZh: editForm.shopNameZh,
+                  addressEn: editForm.shopAddressEn,
+                  addressZh: editForm.shopAddressZh,
+                },
+                contactInfo: {
+                  name: editForm.contactName,
+                  title: editForm.contactTitle,
+                  phone: editForm.contactPhone,
+                  fax: editForm.contactFax,
+                  email: editForm.contactEmail,
+                },
+                accountingContact: {
+                  name: editForm.accountingName,
+                  title: editForm.accountingTitle,
+                  phone: editForm.accountingPhone,
+                  fax: editForm.accountingFax,
+                  email: editForm.accountingEmail,
+                },
+                businessInfo: {
+                  registrationNumber: editForm.businessRegNumber,
+                  nature: editForm.businessNature,
+                  companyStatus: editForm.companyStatus,
+                  propertyStatus: editForm.propertyStatus,
+                },
+                businessRegistrationFileUrl: businessRegistrationFileUrl,
               }
             : member
         );
@@ -236,9 +893,45 @@ export default function AdminMembers() {
     }
   };
 
+  const updateAddFormField = (field: keyof typeof addForm, value: string) => {
+    setAddForm(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
   const handleAddMember = async () => {
-    if (!addForm.name || !addForm.restaurantName || !addForm.email || !addForm.password || !addForm.phone || !addForm.membershipPlan) {
-      setError('請填寫所有必填欄位');
+    const requiredFields: Array<keyof typeof addForm> = [
+      'companyNameEn',
+      'companyAddressEn',
+      'shopNameEn',
+      'shopAddressEn',
+      'contactName',
+      'contactTitle',
+      'contactPhone',
+      'contactEmail',
+      'businessRegNumber',
+      'businessNature',
+      'propertyStatus',
+      'password',
+      'staffName',
+    ];
+
+    const missingField = requiredFields.find((field) => {
+      const value = addForm[field];
+      if (field === 'businessRegistrationFile') {
+        return false; // File is optional
+      }
+      return !value || (typeof value === 'string' && !value.trim());
+    });
+    if (missingField) {
+      setError('請填寫所有標示為 * 的必填欄位');
+      return;
+    }
+
+    // Validate password length
+    if (addForm.password.length < 6) {
+      setError('密碼至少需要 6 個字元');
       return;
     }
 
@@ -246,46 +939,64 @@ export default function AdminMembers() {
       setIsSubmitting(true);
       setError(null);
 
-      // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, addForm.email, addForm.password);
-      const firebaseUid = userCredential.user.uid;
+      // Call API endpoint to create member using Admin SDK
+      const response = await fetch('/api/admin/members', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyNameEn: addForm.companyNameEn,
+          companyNameZh: addForm.companyNameZh,
+          companyAddressEn: addForm.companyAddressEn,
+          companyAddressZh: addForm.companyAddressZh,
+          shopNameEn: addForm.shopNameEn,
+          shopNameZh: addForm.shopNameZh,
+          shopAddressEn: addForm.shopAddressEn,
+          shopAddressZh: addForm.shopAddressZh,
+          contactName: addForm.contactName,
+          contactTitle: addForm.contactTitle,
+          contactPhone: addForm.contactPhone,
+          contactFax: addForm.contactFax,
+          contactEmail: addForm.contactEmail,
+          accountingName: addForm.accountingName,
+          accountingTitle: addForm.accountingTitle,
+          accountingPhone: addForm.accountingPhone,
+          accountingFax: addForm.accountingFax,
+          accountingEmail: addForm.accountingEmail,
+          businessRegNumber: addForm.businessRegNumber,
+          businessNature: addForm.businessNature,
+          propertyStatus: addForm.propertyStatus,
+          password: addForm.password,
+          membershipStatus: addForm.membershipStatus,
+          staffName: addForm.staffName,
+        }),
+      });
 
-      // Generate custom user ID
-      const customUserId = `USER-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+      const result = await response.json();
 
-      // Create user document in Firestore
-      const newMember = {
-        id: customUserId,
-        firebaseUid,
-        name: addForm.name,
-        restaurantName: addForm.restaurantName,
-        email: addForm.email,
-        phone: addForm.phone,
-        membershipStatus: addForm.membershipStatus,
-        membershipPlan: addForm.membershipPlan,
-        address: addForm.address,
-        totalOrders: 0,
-        totalSpent: 0,
-        membershipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-
-      await setDoc(doc(db, 'users', customUserId), newMember);
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '新增餐廳失敗');
+      }
 
       // Add to local state
       const memberForDisplay: Member = {
-        id: customUserId,
-        name: addForm.name,
-        restaurantName: addForm.restaurantName,
-        email: addForm.email,
-        phone: addForm.phone,
-        membershipStatus: addForm.membershipStatus,
-        membershipPlan: addForm.membershipPlan,
-        joinDate: new Date().toISOString().split('T')[0],
-        address: addForm.address,
-        totalOrders: 0,
-        totalSpent: 0
+        id: result.member.id,
+        name: result.member.name,
+        restaurantName: result.member.restaurantName,
+        email: result.member.email,
+        phone: result.member.phone,
+        membershipStatus: result.member.membershipStatus,
+        joinDate: result.member.joinDate,
+        address: result.member.address,
+        totalOrders: result.member.totalOrders,
+        totalSpent: result.member.totalSpent,
+        firebaseUid: result.member.firebaseUid,
+        companyInfo: result.member.companyInfo,
+        shopInfo: result.member.shopInfo,
+        contactInfo: result.member.contactInfo,
+        accountingContact: result.member.accountingContact,
+        businessInfo: result.member.businessInfo,
       };
 
       setMembers([memberForDisplay, ...members]);
@@ -293,34 +1004,39 @@ export default function AdminMembers() {
       
       // Reset form
       setAddForm({
-        name: '',
-        restaurantName: '',
-        email: '',
+        companyNameEn: '',
+        companyNameZh: '',
+        companyAddressEn: '',
+        companyAddressZh: '',
+        shopNameEn: '',
+        shopNameZh: '',
+        shopAddressEn: '',
+        shopAddressZh: '',
+        contactName: '',
+        contactTitle: '',
+        contactPhone: '',
+        contactFax: '',
+        contactEmail: '',
+        accountingName: '',
+        accountingTitle: '',
+        accountingPhone: '',
+        accountingFax: '',
+        accountingEmail: '',
+        businessRegNumber: '',
+        businessNature: '',
+        companyStatus: '',
+        propertyStatus: '',
         password: '',
-        phone: '',
         membershipStatus: 'active',
-        membershipPlan: '基本方案',
-        address: ''
+        businessRegistrationFile: null,
+        staffName: '',
       });
     } catch (error: any) {
       console.error('Error adding member:', error);
-      setError(error.message || '新增會員失敗');
+      setError(error.message || '新增餐廳失敗');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const mockMemberStats = {
-    recentOrders: [
-      { id: 'ORD-001', date: '2024-01-15', amount: 450.00, status: 'delivered' },
-      { id: 'ORD-002', date: '2024-01-12', amount: 320.00, status: 'delivered' },
-      { id: 'ORD-003', date: '2024-01-08', amount: 280.00, status: 'delivered' },
-    ],
-    membershipHistory: [
-      { date: '2023-12-15', action: '方案升級', from: '基本方案', to: '專業方案' },
-      { date: '2023-09-20', action: '付款', amount: 599.00 },
-      { date: '2023-06-10', action: '會員續費', amount: 599.00 },
-    ]
   };
 
   if (loading) {
@@ -340,42 +1056,30 @@ export default function AdminMembers() {
       <div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">會員管理</h1>
+            <h1 className="text-3xl font-bold text-gray-900">餐廳管理</h1>
             <p className="text-gray-600">查看和管理所有食品供應商專業會員</p>
           </div>
           <div className="flex space-x-3">
             <button 
-              onClick={() => setShowAddModal(true)}
-              className="btn-primary"
+              onClick={() => {
+                fetchSalesNames(); // Refresh sales names when opening modal
+                setShowAddModal(true);
+              }}
+              className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
+              style={{ backgroundColor: '#0B8628' }}
             >
               <UserPlus className="w-4 h-4 mr-2" />
-              新增會員
+              新增餐廳
+              <span className="ml-2 text-xs font-normal text-primary-100">建立會員</span>
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="flex justify-start">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 w-full md:w-96">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-blue-100">
-                <Users className="w-10 h-10 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">總會員數</p>
-                <p className="text-3xl font-bold text-gray-900">{membershipStats.total}</p>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="grid grid-cols-1 gap-4">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="md:col-span-2 lg:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">搜尋會員</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -388,6 +1092,18 @@ export default function AdminMembers() {
               />
             </div>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">會員狀態</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              <option value="all">全部狀態</option>
+              <option value="active">有效</option>
+              <option value="inactive">未啟用</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -396,7 +1112,7 @@ export default function AdminMembers() {
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              會員 ({filteredMembers.length})
+              餐廳 ({filteredMembers.length})
             </h2>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <Calendar className="w-4 h-4" />
@@ -416,10 +1132,10 @@ export default function AdminMembers() {
                   聯絡詳情
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  會員資格
+                  會員狀態
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  活動
+                  使用者角色
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   操作
@@ -430,15 +1146,10 @@ export default function AdminMembers() {
               {filteredMembers.map((member) => (
                 <tr key={member.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 rounded-lg bg-gray-100">
-                        <Users className="w-5 h-5 text-gray-600" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                        <div className="text-sm text-gray-500">ID: {member.id}</div>
-                        <div className="text-sm text-gray-500">{member.restaurantName}</div>
-                      </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                      <div className="text-sm text-gray-500">ID: {member.id}</div>
+                      <div className="text-sm text-gray-500">{member.restaurantName}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -459,7 +1170,6 @@ export default function AdminMembers() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="space-y-2">
-                      <div className="text-sm font-medium text-gray-900">{member.membershipPlan}</div>
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.membershipStatus)}`}>
                         {getStatusIcon(member.membershipStatus)}
                         <span className="ml-1">{getStatusText(member.membershipStatus)}</span>
@@ -468,10 +1178,8 @@ export default function AdminMembers() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="text-sm text-gray-900">{member.totalOrders} 訂單</div>
-                      <div className="text-sm text-gray-500">消費 ${member.totalSpent.toFixed(2)}</div>
-                      <div className="text-sm text-gray-500">平均：${(member.totalSpent / member.totalOrders).toFixed(2)}/訂單</div>
+                    <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-blue-200 bg-blue-50 text-blue-700">
+                      {getRoleText(member.role)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -489,6 +1197,18 @@ export default function AdminMembers() {
                         title="編輯會員"
                       >
                         <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMember(member)}
+                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="刪除會員"
+                        disabled={deletingMemberId === member.id}
+                      >
+                        {deletingMemberId === member.id ? (
+                          <span className="inline-block w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </td>
@@ -563,12 +1283,8 @@ export default function AdminMembers() {
 
                 {/* Membership & Activity */}
                 <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">會員資格與活動</h4>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">會員狀態與活動</h4>
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">會員方案</label>
-                      <p className="text-lg font-medium text-gray-900">{selectedMember.membershipPlan}</p>
-                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">狀態</label>
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(selectedMember.membershipStatus)}`}>
@@ -577,70 +1293,333 @@ export default function AdminMembers() {
                       </span>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700">使用者角色</label>
+                      <p className="text-sm text-gray-900">{getRoleText(selectedMember.role)}</p>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700">總訂單數</label>
-                      <p className="text-lg font-bold text-gray-900">{selectedMember.totalOrders}</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {memberOrdersLoading ? '載入中...' : memberOrderStats.totalOrders}
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">總消費</label>
-                      <p className="text-lg font-bold text-gray-900">${selectedMember.totalSpent.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">平均訂單金額</label>
-                      <p className="text-sm text-gray-900">${(selectedMember.totalSpent / selectedMember.totalOrders).toFixed(2)}</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {memberOrdersLoading
+                          ? '載入中...'
+                          : formatCurrency(memberOrderStats.totalSpent)}
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Company & Shop Information */}
+              {(selectedMember.companyInfo || selectedMember.shopInfo) && (
+                <div className="mt-8">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">公司及店舖資料 Company & Shop</h4>
+                  <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selectedMember.companyInfo && (
+                      <div className="space-y-2">
+                        {selectedMember.companyInfo.nameEn && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">公司名稱（英文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.companyInfo.nameEn}</p>
+                          </div>
+                        )}
+                        {selectedMember.companyInfo.nameZh && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">公司名稱（中文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.companyInfo.nameZh}</p>
+                          </div>
+                        )}
+                        {selectedMember.companyInfo.addressEn && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">公司地址（英文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.companyInfo.addressEn}</p>
+                          </div>
+                        )}
+                        {selectedMember.companyInfo.addressZh && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">公司地址（中文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.companyInfo.addressZh}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {selectedMember.shopInfo && (
+                      <div className="space-y-2">
+                        {selectedMember.shopInfo.nameEn && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">店舖名稱（英文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.shopInfo.nameEn}</p>
+                          </div>
+                        )}
+                        {selectedMember.shopInfo.nameZh && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">店舖名稱（中文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.shopInfo.nameZh}</p>
+                          </div>
+                        )}
+                        {selectedMember.shopInfo.addressEn && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">店舖地址（英文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.shopInfo.addressEn}</p>
+                          </div>
+                        )}
+                        {selectedMember.shopInfo.addressZh && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">店舖地址（中文）</label>
+                            <p className="text-sm text-gray-900">{selectedMember.shopInfo.addressZh}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Contact & Accounting Information */}
+              {(selectedMember.contactInfo || selectedMember.accountingContact) && (
+                <div className="mt-8">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">聯絡人及會計部資料 Contacts</h4>
+                  <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {selectedMember.contactInfo && (
+                      <div className="space-y-2">
+                        <h5 className="text-sm font-semibold text-gray-800">聯絡人 Contact Person</h5>
+                        {selectedMember.contactInfo.name && (
+                          <p className="text-sm text-gray-900">姓名：{selectedMember.contactInfo.name}</p>
+                        )}
+                        {selectedMember.contactInfo.title && (
+                          <p className="text-sm text-gray-900">職銜：{selectedMember.contactInfo.title}</p>
+                        )}
+                        {selectedMember.contactInfo.phone && (
+                          <p className="text-sm text-gray-900">電話：{selectedMember.contactInfo.phone}</p>
+                        )}
+                        {selectedMember.contactInfo.fax && (
+                          <p className="text-sm text-gray-900">傳真：{selectedMember.contactInfo.fax}</p>
+                        )}
+                        {selectedMember.contactInfo.email && (
+                          <p className="text-sm text-gray-900">電郵：{selectedMember.contactInfo.email}</p>
+                        )}
+                      </div>
+                    )}
+                    {selectedMember.accountingContact && (
+                      <div className="space-y-2">
+                        <h5 className="text-sm font-semibold text-gray-800">會計部聯絡人 Accounting Contact</h5>
+                        {selectedMember.accountingContact.name && (
+                          <p className="text-sm text-gray-900">姓名：{selectedMember.accountingContact.name}</p>
+                        )}
+                        {selectedMember.accountingContact.title && (
+                          <p className="text-sm text-gray-900">職銜：{selectedMember.accountingContact.title}</p>
+                        )}
+                        {selectedMember.accountingContact.phone && (
+                          <p className="text-sm text-gray-900">電話：{selectedMember.accountingContact.phone}</p>
+                        )}
+                        {selectedMember.accountingContact.fax && (
+                          <p className="text-sm text-gray-900">傳真：{selectedMember.accountingContact.fax}</p>
+                        )}
+                        {selectedMember.accountingContact.email && (
+                          <p className="text-sm text-gray-900">電郵：{selectedMember.accountingContact.email}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Business Information */}
+              {(selectedMember.businessInfo || (selectedMember.businessRegistrationFileUrl && selectedMember.businessRegistrationFileUrl.trim())) && (
+                <div className="mt-8">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">營運及授信資料 Business Details</h4>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    {selectedMember.businessInfo && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        {selectedMember.businessInfo.registrationNumber && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">商業登記證號碼</label>
+                            <p className="text-sm text-gray-900">{selectedMember.businessInfo.registrationNumber}</p>
+                          </div>
+                        )}
+                        {selectedMember.businessInfo.nature && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">業務性質</label>
+                            <p className="text-sm text-gray-900">{selectedMember.businessInfo.nature}</p>
+                          </div>
+                        )}
+                        {selectedMember.businessInfo.companyStatus && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">公司性質</label>
+                            <p className="text-sm text-gray-900">{selectedMember.businessInfo.companyStatus}</p>
+                          </div>
+                        )}
+                        {selectedMember.businessInfo.propertyStatus && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">該鋪自置或租用</label>
+                            <p className="text-sm text-gray-900">
+                              {selectedMember.businessInfo.propertyStatus === 'owned' ? '自置 Owned' : 
+                               selectedMember.businessInfo.propertyStatus === 'rented' ? '租用 Rented' : 
+                               selectedMember.businessInfo.propertyStatus}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {selectedMember.businessRegistrationFileUrl && selectedMember.businessRegistrationFileUrl.trim() && (
+                      <div className={selectedMember.businessInfo ? "pt-4 border-t border-gray-200" : ""}>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">上傳商業登記證副本</label>
+                        <a
+                          href={selectedMember.businessRegistrationFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-4 py-2 bg-[#0B8628] text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          查看商業登記證副本
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Follow-up Staff */}
+              {selectedMember.staffName && selectedMember.staffName.trim() && (
+                <div className="mt-8">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">平台跟進專員</h4>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-sm text-gray-900">
+                      工作人員名稱：{selectedMember.staffName}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Recent Orders */}
               <div className="mt-8">
                 <h4 className="text-lg font-semibold text-gray-900 mb-4">最近訂單</h4>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="space-y-3">
-                    {mockMemberStats.recentOrders.map((order, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Package className="w-5 h-5 text-gray-400" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{order.id}</p>
-                            <p className="text-xs text-gray-500">{order.date}</p>
+                  {memberOrdersLoading ? (
+                    <div className="p-4 text-sm text-gray-500">訂單資料載入中...</div>
+                  ) : memberRecentOrders.length > 0 ? (
+                    <div className="space-y-3">
+                      {memberRecentOrders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="flex items-center justify-between p-3 bg-white rounded-lg"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Package className="w-5 h-5 text-gray-400" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{order.id}</p>
+                              <p className="text-xs text-gray-500">{formatDateTime(order.createdAt)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-900">
+                              {formatCurrency(order.totalAmount)}
+                            </p>
+                            <p
+                              className={`text-xs font-medium ${
+                                order.status === 'delivered'
+                                  ? 'text-green-600'
+                                  : order.status === 'cancelled'
+                                  ? 'text-red-500'
+                                  : 'text-gray-500'
+                              }`}
+                            >
+                              {getOrderStatusText(order.status)}
+                            </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900">${order.amount.toFixed(2)}</p>
-                          <p className="text-xs text-green-600 capitalize">{order.status === 'delivered' ? '已送達' : order.status}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">暫無訂單紀錄</p>
+                  )}
                 </div>
               </div>
 
-              {/* Membership History */}
+              {/* Points Transactions */}
               <div className="mt-8">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">會員歷史</h4>
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">點數交易記錄</h4>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="space-y-3">
-                    {mockMemberStats.membershipHistory.map((history, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <CreditCard className="w-5 h-5 text-gray-400" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{history.action}</p>
-                            <p className="text-xs text-gray-500">{history.date}</p>
-                            {history.from && (
-                              <p className="text-xs text-gray-500">{history.from} → {history.to}</p>
-                            )}
+                  {memberPointsLoading ? (
+                    <div className="p-4 text-sm text-gray-500">點數交易載入中...</div>
+                  ) : memberPointTransactions.length > 0 ? (
+                    <div className="space-y-3">
+                      {memberPointTransactions.map((tx) => {
+                        const pointsClass =
+                          tx.points >= 0 ? 'text-green-600' : 'text-red-600';
+                        const statusClass = tx.status
+                          ? tx.status === 'completed'
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : tx.status === 'pending'
+                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            : 'bg-gray-50 text-gray-600 border-gray-200'
+                          : '';
+                        return (
+                          <div
+                            key={tx.id}
+                            className="flex items-start justify-between p-3 bg-white rounded-lg"
+                          >
+                            <div className="flex items-start space-x-3">
+                              <div className="p-2 bg-yellow-100 rounded-full">
+                                <Coins className="w-4 h-4 text-yellow-600" />
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {tx.description || (tx.type === 'purchase' ? '購買點數' : '點數交易')}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {formatDateTime(tx.createdAt)}
+                                </p>
+                                {tx.planId && (
+                                  <p className="text-xs text-gray-400">方案：{tx.planId}</p>
+                                )}
+                                {tx.status && (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusClass}`}
+                                  >
+                                    {getPointsStatusText(tx.status)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right space-y-1">
+                              <p className={`text-sm font-semibold ${pointsClass}`}>
+                                {`${tx.points >= 0 ? '+' : ''}${tx.points.toLocaleString()} 點`}
+                              </p>
+                              {typeof tx.amount === 'number' && (
+                                <p className="text-xs text-gray-500">
+                                  {formatCurrency(tx.amount)}
+                                </p>
+                              )}
+                              {typeof tx.newBalance === 'number' && (
+                                <p className="text-xs text-gray-400">
+                                  餘額：{tx.newBalance.toLocaleString()} 點
+                                </p>
+                              )}
+                              {tx.receiptUrl && (
+                                <a
+                                  href={tx.receiptUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-xs text-primary-600 hover:text-primary-800"
+                                >
+                                  查看收據
+                                </a>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        {history.amount && (
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-gray-900">${history.amount.toFixed(2)}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">暫無點數交易記錄</p>
+                  )}
                 </div>
               </div>
               
@@ -660,10 +1639,10 @@ export default function AdminMembers() {
       {/* Add Member Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
             <div className="mt-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">新增會員</h3>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">新增餐廳</h3>
                 <button
                   onClick={() => {
                     setShowAddModal(false);
@@ -676,102 +1655,317 @@ export default function AdminMembers() {
               </div>
 
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-sm text-red-600">{error}</p>
                 </div>
               )}
               
-              <div className="space-y-4">
+              <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-1">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員姓名 *</label>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">公司資料 Company Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司名稱（英文）*</label>
                   <input
                     type="text"
-                    value={addForm.name}
-                    onChange={(e) => setAddForm({...addForm, name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="請輸入會員姓名"
+                        required
+                        value={addForm.companyNameEn}
+                        onChange={(e) => updateAddFormField('companyNameEn', e.target.value)}
+                        placeholder="Company Name (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
                   />
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">餐廳名稱 *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司名稱（中文）</label>
                   <input
                     type="text"
-                    value={addForm.restaurantName}
-                    onChange={(e) => setAddForm({...addForm, restaurantName: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="請輸入餐廳名稱"
+                        value={addForm.companyNameZh}
+                        onChange={(e) => updateAddFormField('companyNameZh', e.target.value)}
+                        placeholder="公司名稱"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
                   />
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">電子郵件 *</label>
-                  <input
-                    type="email"
-                    value={addForm.email}
-                    onChange={(e) => setAddForm({...addForm, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="example@restaurant.com"
-                  />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司地址（英文）*</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.companyAddressEn}
+                        onChange={(e) => updateAddFormField('companyAddressEn', e.target.value)}
+                        placeholder="Company Address (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司地址（中文）</label>
+                      <input
+                        type="text"
+                        value={addForm.companyAddressZh}
+                        onChange={(e) => updateAddFormField('companyAddressZh', e.target.value)}
+                        placeholder="公司地址"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">密碼 *</label>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">店舖資料 Shop Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖名稱（英文）*</label>
+                  <input
+                        type="text"
+                        required
+                        value={addForm.shopNameEn}
+                        onChange={(e) => updateAddFormField('shopNameEn', e.target.value)}
+                        placeholder="Shop Name (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                  />
+                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖名稱（中文）</label>
+                      <input
+                        type="text"
+                        value={addForm.shopNameZh}
+                        onChange={(e) => updateAddFormField('shopNameZh', e.target.value)}
+                        placeholder="店舖名稱"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖地址（英文）*</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.shopAddressEn}
+                        onChange={(e) => updateAddFormField('shopAddressEn', e.target.value)}
+                        placeholder="Shop Address (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖地址（中文）</label>
+                      <input
+                        type="text"
+                        value={addForm.shopAddressZh}
+                        onChange={(e) => updateAddFormField('shopAddressZh', e.target.value)}
+                        placeholder="店舖地址"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">聯絡人 Contact Person</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">聯絡人姓名 *</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.contactName}
+                        onChange={(e) => updateAddFormField('contactName', e.target.value)}
+                        placeholder="Contact Person"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">職銜 Title *</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.contactTitle}
+                        onChange={(e) => updateAddFormField('contactTitle', e.target.value)}
+                        placeholder="Title"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電話號碼 *</label>
+                      <input
+                        type="tel"
+                        required
+                        value={addForm.contactPhone}
+                        onChange={(e) => updateAddFormField('contactPhone', e.target.value)}
+                        placeholder="Telephone"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">傳真號碼</label>
+                      <input
+                        type="text"
+                        value={addForm.contactFax}
+                        onChange={(e) => updateAddFormField('contactFax', e.target.value)}
+                        placeholder="Fax"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電郵地址 *</label>
+                      <input
+                        type="email"
+                        required
+                        value={addForm.contactEmail}
+                        onChange={(e) => updateAddFormField('contactEmail', e.target.value)}
+                        placeholder="Email"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">登入密碼 *</label>
                   <input
                     type="password"
+                        required
                     value={addForm.password}
-                    onChange={(e) => setAddForm({...addForm, password: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        onChange={(e) => updateAddFormField('password', e.target.value)}
                     placeholder="至少6個字元"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
                   />
                   <p className="text-xs text-gray-500 mt-1">密碼至少需要6個字元</p>
                 </div>
+                  </div>
+                </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">電話 *</label>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">會計部聯絡人 Accounting Contact</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">聯絡人姓名</label>
+                      <input
+                        type="text"
+                        value={addForm.accountingName}
+                        onChange={(e) => updateAddFormField('accountingName', e.target.value)}
+                        placeholder="Accounting Contact Person"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">職銜 Title</label>
+                      <input
+                        type="text"
+                        value={addForm.accountingTitle}
+                        onChange={(e) => updateAddFormField('accountingTitle', e.target.value)}
+                        placeholder="Title"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電話號碼</label>
                   <input
                     type="tel"
-                    value={addForm.phone}
-                    onChange={(e) => setAddForm({...addForm, phone: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="(555) 123-4567"
+                        value={addForm.accountingPhone}
+                        onChange={(e) => updateAddFormField('accountingPhone', e.target.value)}
+                        placeholder="A/C Telephone"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
                   />
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員方案 *</label>
-                  <select
-                    value={addForm.membershipPlan}
-                    onChange={(e) => setAddForm({...addForm, membershipPlan: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="專業方案">專業方案</option>
-                    <option value="高級方案">高級方案</option>
-                  </select>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">傳真號碼</label>
+                      <input
+                        type="text"
+                        value={addForm.accountingFax}
+                        onChange={(e) => updateAddFormField('accountingFax', e.target.value)}
+                        placeholder="A/C Fax"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電郵地址</label>
+                      <input
+                        type="email"
+                        value={addForm.accountingEmail}
+                        onChange={(e) => updateAddFormField('accountingEmail', e.target.value)}
+                        placeholder="A/C Email"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員狀態</label>
-                  <select
-                    value={addForm.membershipStatus}
-                    onChange={(e) => setAddForm({...addForm, membershipStatus: e.target.value as 'active' | 'inactive' | 'expired'})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="active">活躍</option>
-                    <option value="inactive">非活躍</option>
-                    <option value="expired">已過期</option>
-                  </select>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">營運及授信資料 Business Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">商業登記證號碼 *</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.businessRegNumber}
+                        onChange={(e) => updateAddFormField('businessRegNumber', e.target.value)}
+                        placeholder="Business Registration No."
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">上傳商業登記證副本</label>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAddForm(prev => ({ ...prev, businessRegistrationFile: file }));
+                        }}
+                        className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-[#0B8628] hover:file:bg-green-100"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">業務性質 *</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.businessNature}
+                        onChange={(e) => updateAddFormField('businessNature', e.target.value)}
+                        placeholder="Nature of Business"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">該鋪自置或租用 *</label>
+                      <select
+                        required
+                        value={addForm.propertyStatus}
+                        onChange={(e) => updateAddFormField('propertyStatus', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      >
+                        <option value="">請選擇</option>
+                        <option value="owned">自置 Owned</option>
+                        <option value="rented">租用 Rented</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">地址</label>
-                  <textarea
-                    value={addForm.address}
-                    onChange={(e) => setAddForm({...addForm, address: e.target.value})}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="請輸入完整地址"
-                  />
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">會員設定</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">會員狀態</label>
+                      <select
+                        value={addForm.membershipStatus}
+                        onChange={(e) =>
+                          updateAddFormField('membershipStatus', e.target.value as 'active' | 'inactive')
+                        }
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      >
+                        <option value="active">有效</option>
+                        <option value="inactive">未啟用</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">工作人員名稱 *</label>
+                      <input
+                        type="text"
+                        required
+                        value={addForm.staffName}
+                        onChange={(e) => updateAddFormField('staffName', e.target.value)}
+                        placeholder="請輸入工作人員名稱"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
               
@@ -789,9 +1983,10 @@ export default function AdminMembers() {
                 <button
                   onClick={handleAddMember}
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: '#0B8628' }}
                 >
-                  {isSubmitting ? '新增中...' : '新增會員'}
+                  {isSubmitting ? '新增中...' : '新增餐廳'}
                 </button>
               </div>
             </div>
@@ -802,7 +1997,7 @@ export default function AdminMembers() {
       {/* Edit Member Modal */}
       {showEditModal && selectedMember && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">編輯會員</h3>
@@ -823,81 +2018,354 @@ export default function AdminMembers() {
                 </div>
               )}
               
-              <div className="space-y-4">
+              <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-1">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員姓名</label>
-                  <input
-                    type="text"
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">公司資料 Company Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司名稱（英文）*</label>
+                      <input
+                        type="text"
+                        value={editForm.companyNameEn}
+                        onChange={(e) => updateEditFormField('companyNameEn', e.target.value)}
+                        placeholder="Company Name (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司名稱（中文）</label>
+                      <input
+                        type="text"
+                        value={editForm.companyNameZh}
+                        onChange={(e) => updateEditFormField('companyNameZh', e.target.value)}
+                        placeholder="公司名稱"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司地址（英文）*</label>
+                      <input
+                        type="text"
+                        value={editForm.companyAddressEn}
+                        onChange={(e) => updateEditFormField('companyAddressEn', e.target.value)}
+                        placeholder="Company Address (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司地址（中文）</label>
+                      <input
+                        type="text"
+                        value={editForm.companyAddressZh}
+                        onChange={(e) => updateEditFormField('companyAddressZh', e.target.value)}
+                        placeholder="公司地址"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">餐廳名稱</label>
-                  <input
-                    type="text"
-                    value={editForm.restaurantName}
-                    onChange={(e) => setEditForm({...editForm, restaurantName: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">店舖資料 Shop Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖名稱（英文）*</label>
+                      <input
+                        type="text"
+                        value={editForm.shopNameEn}
+                        onChange={(e) => updateEditFormField('shopNameEn', e.target.value)}
+                        placeholder="Shop Name (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖名稱（中文）</label>
+                      <input
+                        type="text"
+                        value={editForm.shopNameZh}
+                        onChange={(e) => updateEditFormField('shopNameZh', e.target.value)}
+                        placeholder="店舖名稱"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖地址（英文）*</label>
+                      <input
+                        type="text"
+                        value={editForm.shopAddressEn}
+                        onChange={(e) => updateEditFormField('shopAddressEn', e.target.value)}
+                        placeholder="Shop Address (English)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">店舖地址（中文）</label>
+                      <input
+                        type="text"
+                        value={editForm.shopAddressZh}
+                        onChange={(e) => updateEditFormField('shopAddressZh', e.target.value)}
+                        placeholder="店舖地址"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">電子郵件</label>
-                  <input
-                    type="email"
-                    value={editForm.email}
-                    onChange={(e) => setEditForm({...editForm, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">聯絡人 Contact Person</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">聯絡人姓名 *</label>
+                      <input
+                        type="text"
+                        value={editForm.contactName}
+                        onChange={(e) => updateEditFormField('contactName', e.target.value)}
+                        placeholder="Contact Person"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">職銜 Title *</label>
+                      <input
+                        type="text"
+                        value={editForm.contactTitle}
+                        onChange={(e) => updateEditFormField('contactTitle', e.target.value)}
+                        placeholder="Title"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電話號碼 *</label>
+                      <input
+                        type="tel"
+                        value={editForm.contactPhone}
+                        onChange={(e) => updateEditFormField('contactPhone', e.target.value)}
+                        placeholder="Telephone"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">傳真號碼</label>
+                      <input
+                        type="text"
+                        value={editForm.contactFax}
+                        onChange={(e) => updateEditFormField('contactFax', e.target.value)}
+                        placeholder="Fax"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電郵地址 *</label>
+                      <input
+                        type="email"
+                        value={editForm.contactEmail}
+                        onChange={(e) => updateEditFormField('contactEmail', e.target.value)}
+                        placeholder="Email"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">電話</label>
-                  <input
-                    type="tel"
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">會計部聯絡人 Accounting Contact</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">聯絡人姓名</label>
+                      <input
+                        type="text"
+                        value={editForm.accountingName}
+                        onChange={(e) => updateEditFormField('accountingName', e.target.value)}
+                        placeholder="Accounting Contact Person"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">職銜 Title</label>
+                      <input
+                        type="text"
+                        value={editForm.accountingTitle}
+                        onChange={(e) => updateEditFormField('accountingTitle', e.target.value)}
+                        placeholder="Title"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電話號碼</label>
+                      <input
+                        type="tel"
+                        value={editForm.accountingPhone}
+                        onChange={(e) => updateEditFormField('accountingPhone', e.target.value)}
+                        placeholder="A/C Telephone"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">傳真號碼</label>
+                      <input
+                        type="text"
+                        value={editForm.accountingFax}
+                        onChange={(e) => updateEditFormField('accountingFax', e.target.value)}
+                        placeholder="A/C Fax"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">電郵地址</label>
+                      <input
+                        type="email"
+                        value={editForm.accountingEmail}
+                        onChange={(e) => updateEditFormField('accountingEmail', e.target.value)}
+                        placeholder="A/C Email"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員方案</label>
-                  <select
-                    value={editForm.membershipPlan}
-                    onChange={(e) => setEditForm({...editForm, membershipPlan: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="">選擇方案</option>
-                    <option value="專業方案">專業方案</option>
-                    <option value="高級方案">高級方案</option>
-                  </select>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">營運及授信資料 Business Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">商業登記證號碼 *</label>
+                      <input
+                        type="text"
+                        value={editForm.businessRegNumber}
+                        onChange={(e) => updateEditFormField('businessRegNumber', e.target.value)}
+                        placeholder="Business Registration No."
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">上傳商業登記證副本</label>
+                      {editForm.businessRegistrationFileUrl && (
+                        <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <p className="text-sm text-gray-700 mb-2">已上傳的檔案：</p>
+                          <a
+                            href={editForm.businessRegistrationFileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-sm text-[#0B8628] hover:text-green-700 underline"
+                          >
+                            查看商業登記證副本
+                            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setEditForm(prev => ({ ...prev, businessRegistrationFile: file }));
+                        }}
+                        className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-[#0B8628] hover:file:bg-green-100"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">上傳新檔案將取代現有檔案</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">業務性質 *</label>
+                      <input
+                        type="text"
+                        value={editForm.businessNature}
+                        onChange={(e) => updateEditFormField('businessNature', e.target.value)}
+                        placeholder="Nature of Business"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">公司性質 *</label>
+                      <input
+                        type="text"
+                        value={editForm.companyStatus}
+                        onChange={(e) => updateEditFormField('companyStatus', e.target.value)}
+                        placeholder="Company Status"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">該鋪自置或租用 *</label>
+                      <select
+                        value={editForm.propertyStatus}
+                        onChange={(e) => updateEditFormField('propertyStatus', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      >
+                        <option value="">請選擇</option>
+                        <option value="owned">自置 Owned</option>
+                        <option value="rented">租用 Rented</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">會員狀態</label>
-                  <select
-                    value={editForm.membershipStatus}
-                    onChange={(e) => setEditForm({...editForm, membershipStatus: e.target.value as 'active' | 'inactive' | 'expired'})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="active">活躍</option>
-                    <option value="inactive">非活躍</option>
-                    <option value="expired">已過期</option>
-                  </select>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">帳號設定</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">設定新密碼</label>
+                      <input
+                        type="password"
+                        value={editForm.password}
+                        onChange={(e) => updateEditFormField('password', e.target.value)}
+                        placeholder="若不修改請留空"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">密碼至少需 6 個字元</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">確認新密碼</label>
+                      <input
+                        type="password"
+                        value={editForm.confirmPassword}
+                        onChange={(e) => updateEditFormField('confirmPassword', e.target.value)}
+                        placeholder="再次輸入新密碼"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">地址</label>
-                  <textarea
-                    value={editForm.address}
-                    onChange={(e) => setEditForm({...editForm, address: e.target.value})}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">會員設定</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">會員狀態</label>
+                      <select
+                        value={editForm.membershipStatus}
+                        onChange={(e) =>
+                          updateEditFormField('membershipStatus', e.target.value as 'active' | 'inactive')
+                        }
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                      >
+                        <option value="active">有效</option>
+                        <option value="inactive">未啟用</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">工作人員名稱 *</label>
+                      {loadingSalesNames ? (
+                        <div className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                          <span className="text-sm text-gray-500">載入中...</span>
+                        </div>
+                      ) : (
+                        <select
+                          required
+                          value={editForm.staffName}
+                          onChange={(e) => updateEditFormField('staffName', e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B8628]"
+                        >
+                          <option value="">請選擇工作人員</option>
+                          {salesNames.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
               

@@ -11,15 +11,17 @@ import {
   TextInput,
   FlatList,
   Alert,
-  RefreshControl
+  RefreshControl,
+  Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useCart } from '../hooks/useCart';
 import { Product, Category } from '../../../shared/types';
 import { db } from '../../../shared/firebase';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, setDoc } from 'firebase/firestore';
 import { categories as defaultCategories } from '../../../shared/products';
+import { useAuth } from '../hooks/useAuth';
 
 type CategoryProductsRouteProp = RouteProp<{
   CategoryProducts: {
@@ -31,13 +33,18 @@ const CategoryProductsScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute<CategoryProductsRouteProp>();
   const { category } = route.params;
-  const { addToCart, items, state } = useCart();
+  const { addToCart, items, state, updateQuantity } = useCart();
+  const { firebaseUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [quantityModalVisible, setQuantityModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingQuantity, setEditingQuantity] = useState('');
   
   // Get the category of items in the cart
   const cartCategory = state.items.length > 0 ? state.items[0].category : null;
@@ -61,6 +68,7 @@ const CategoryProductsScreen: React.FC = () => {
           description: data.description || '',
           imageUrl: data.imageUrl || '',
           subcategories: data.subcategories || [],
+          minimumSpending: data.minimumSpending || undefined,
         };
       });
       
@@ -115,6 +123,25 @@ const CategoryProductsScreen: React.FC = () => {
     fetchProducts();
   }, [category.name]);
 
+  // Load current user's favorites once
+  useEffect(() => {
+    const fetchFavorites = async () => {
+      if (!firebaseUser?.uid) {
+        setFavoriteIds(new Set());
+        return;
+      }
+      try {
+        const favRef = collection(db, 'users', firebaseUser.uid, 'favorites');
+        const snap = await getDocs(favRef);
+        const ids = new Set<string>(snap.docs.map(d => d.id));
+        setFavoriteIds(ids);
+      } catch (e) {
+        console.log('Failed to load favorites', e);
+      }
+    };
+    fetchFavorites();
+  }, [firebaseUser?.uid]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchProducts();
@@ -132,34 +159,113 @@ const CategoryProductsScreen: React.FC = () => {
     return cartItem ? cartItem.quantity : 0;
   };
 
+  const openQuantityModal = (product: Product) => {
+    const currentQty = getCartQuantity(product.id);
+    const initialQty = currentQty > 0 ? currentQty : product.minOrderQuantity || 1;
+    setEditingProduct(product);
+    setEditingQuantity(String(initialQty));
+    setQuantityModalVisible(true);
+  };
+
+  const closeQuantityModal = () => {
+    setQuantityModalVisible(false);
+    setEditingProduct(null);
+    setEditingQuantity('');
+  };
+
+  const confirmQuantityChange = () => {
+    if (!editingProduct) return;
+    const parsed = parseInt(editingQuantity, 10);
+    const nextQty = isNaN(parsed) ? 0 : parsed;
+
+    if (nextQty <= 0) {
+      updateQuantity(editingProduct.id, 0);
+    } else {
+      updateQuantity(editingProduct.id, nextQty);
+    }
+
+    closeQuantityModal();
+  };
+
   const handleAddToCart = (product: Product) => {
     addToCart(product);
-    // Show success feedback
-    Alert.alert(
-      '已加入購物車',
-      `${product.name} 已成功加入購物車`,
-      [{ text: '確定' }]
-    );
+  };
+
+  const handleAddFavorite = async (product: Product) => {
+    if (!firebaseUser?.uid) {
+      Alert.alert('請先登入', '請先登入以加入收藏');
+      return;
+    }
+    if (favoriteIds.has(product.id)) return;
+    try {
+      const favRef = doc(db, 'users', firebaseUser.uid, 'favorites', product.id);
+      await setDoc(favRef, {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.imageUrl,
+        category: product.category,
+        createdAt: new Date(),
+      }, { merge: true });
+      setFavoriteIds(prev => new Set(prev).add(product.id));
+      Alert.alert('成功', '已加入收藏');
+    } catch (e) {
+      console.log('Failed to add favorite', e);
+      Alert.alert('錯誤', '加入收藏失敗');
+    }
   };
 
   const renderProduct = ({ item }: { item: Product }) => {
     const cartQuantity = getCartQuantity(item.id);
     const isDifferentCategory = cartCategory && item.category !== cartCategory;
 
+    const displayImage = item.imageUrl || (item.imageUrls?.[0] ?? '');
+
     return (
       <TouchableOpacity 
         style={styles.productCard}
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
       >
+        <View style={styles.productThumbnailWrapper}>
+          {displayImage ? (
+            <Image
+              source={{ uri: displayImage }}
+              style={styles.productThumbnail}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.productThumbnail, styles.productThumbnailPlaceholder]}>
+              <Ionicons name="image" size={24} color="#9CA3AF" />
+            </View>
+          )}
+        </View>
         <View style={styles.productInfo}>
           <Text style={styles.productName}>{item.name}</Text>
           <View style={styles.productFooter}>
             <Text style={styles.productPrice}>HKD$ {item.price} / {item.unit}</Text>
             <View style={styles.cartSection}>
               {cartQuantity > 0 && (
-                <View style={styles.quantityBadge}>
-                  <Text style={styles.quantityText}>{cartQuantity}</Text>
-                </View>
+                <>
+                  <TouchableOpacity
+                    style={styles.removeButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      const nextQty = Math.max(0, cartQuantity - 1);
+                      updateQuantity(item.id, nextQty);
+                    }}
+                  >
+                    <Ionicons name="remove" size={20} color="#111827" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quantityBadge}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      openQuantityModal(item);
+                    }}
+                  >
+                    <Text style={styles.quantityText}>{cartQuantity}</Text>
+                  </TouchableOpacity>
+                </>
               )}
               <TouchableOpacity
                 style={[styles.addButton, isDifferentCategory && styles.addButtonDisabled]}
@@ -175,6 +281,25 @@ const CategoryProductsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+          {favoriteIds.has(item.id) ? (
+            <View style={styles.favoriteStatusPill}>
+              <Text style={styles.favoriteStatusText}>已加入收藏</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.favoriteIconButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleAddFavorite(item);
+              }}
+            >
+              <Ionicons
+                name="heart-outline"
+                size={18}
+                color="#10B981"
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -280,6 +405,44 @@ const CategoryProductsScreen: React.FC = () => {
           ) : null
         }
       />
+
+      {/* Quantity Edit Modal (outside FlatList to avoid focus bug) */}
+      <Modal
+        visible={quantityModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeQuantityModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>修改數量</Text>
+            {editingProduct && (
+              <Text style={styles.modalProductName}>{editingProduct.name}</Text>
+            )}
+            <TextInput
+              style={styles.modalQuantityInput}
+              keyboardType="number-pad"
+              value={editingQuantity}
+              onChangeText={setEditingQuantity}
+              placeholder="輸入數量"
+            />
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={closeQuantityModal}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonCancelText]}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={confirmQuantityChange}
+              >
+                <Text style={styles.modalButtonText}>確認</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -376,6 +539,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  productThumbnailWrapper: {
+    marginRight: 15,
+  },
+  productThumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+  },
+  productThumbnailPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   productInfo: {
     flex: 1,
     justifyContent: 'space-between',
@@ -403,11 +579,12 @@ const styles = StyleSheet.create({
   quantityBadge: {
     backgroundColor: '#10B981',
     borderRadius: 10,
-    width: 20,
+    minWidth: 24,
+    paddingHorizontal: 6,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginHorizontal: 8,
   },
   quantityText: {
     color: '#fff',
@@ -425,6 +602,43 @@ const styles = StyleSheet.create({
   addButtonDisabled: {
     backgroundColor: '#ccc',
     opacity: 0.5,
+  },
+  removeButton: {
+    backgroundColor: '#F3F4F6',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  favoriteIconButton: {
+    marginTop: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoriteStatusPill: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  favoriteStatusText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   warningBanner: {
     flexDirection: 'row',
@@ -453,6 +667,62 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  modalProductName: {
+    fontSize: 14,
+    color: '#4B5563',
+    marginBottom: 12,
+  },
+  modalQuantityInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modalButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  modalButtonCancel: {
+    backgroundColor: '#E5E7EB',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalButtonCancelText: {
+    color: '#111827',
   },
 });
 

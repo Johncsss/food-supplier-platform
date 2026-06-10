@@ -5,8 +5,14 @@ import { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
  * @param userId - The user ID
  * @param pointsAmount - The amount of points to add
  * @param transactionId - The transaction/payment ID for tracking
+ * @param options - Additional metadata for the transaction
  */
-export async function addPointsToUser(userId: string, pointsAmount: number, transactionId: string) {
+export async function addPointsToUser(
+  userId: string,
+  pointsAmount: number,
+  transactionId: string,
+  options: { receiptUrl?: string; planId?: string } = {},
+) {
   // Find user document using Admin SDK
   let userDocId = userId;
   let userDoc;
@@ -57,6 +63,8 @@ export async function addPointsToUser(userId: string, pointsAmount: number, tran
       type: 'purchase',
       description: `購買 ${pointsAmount} 點數`,
       transactionId,
+      receiptUrl: options.receiptUrl || '',
+      planId: options.planId || null,
     });
   });
 }

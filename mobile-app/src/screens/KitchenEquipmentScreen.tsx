@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,154 +9,100 @@ import {
   StatusBar,
   Image,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { fetchServicePageAreas, fetchMobileAppData } from '../services/servicePageDefaults';
 
 const { width } = Dimensions.get('window');
 
 const KitchenEquipmentScreen: React.FC = () => {
   const navigation = useNavigation();
+  const [pageAreas, setPageAreas] = useState<any | null>(null);
+  const [mobileAppData, setMobileAppData] = useState<any | null>(null);
 
-  const equipmentCategories = [
-    {
-      id: 1,
-      title: '烹飪設備',
-      description: '專業烹飪設備，提升廚房效率',
-      icon: 'flame-outline',
-      color: '#EF4444',
-      items: ['爐具', '烤箱', '蒸籠', '炸鍋', '烤架', '平底鍋']
-    },
-    {
-      id: 2,
-      title: '冷藏設備',
-      description: '高效冷藏設備，保持食材新鮮',
-      icon: 'snow-outline',
-      color: '#3B82F6',
-      items: ['冰箱', '冷凍櫃', '冷藏櫃', '製冰機', '冷卻器', '保鮮櫃']
-    },
-    {
-      id: 3,
-      title: '清潔設備',
-      description: '專業清潔設備，確保衛生標準',
-      icon: 'water-outline',
-      color: '#10B981',
-      items: ['洗碗機', '消毒櫃', '清潔機', '烘乾機', '洗滌槽', '清潔劑']
-    },
-    {
-      id: 4,
-      title: '切配設備',
-      description: '高效切配設備，提升備料效率',
-      icon: 'cut-outline',
-      color: '#F59E0B',
-      items: ['切菜機', '攪拌機', '榨汁機', '切片機', '絞肉機', '攪拌器']
-    },
-    {
-      id: 5,
-      title: '烘焙設備',
-      description: '專業烘焙設備，製作精美糕點',
-      icon: 'bread-outline',
-      color: '#8B5CF6',
-      items: ['烤箱', '發酵箱', '攪拌機', '壓麵機', '模具', '烘焙工具']
-    },
-    {
-      id: 6,
-      title: '通風設備',
-      description: '高效通風設備，保持廚房空氣清新',
-      icon: 'airplane-outline',
-      color: '#06B6D4',
-      items: ['抽油煙機', '排風扇', '通風管', '空氣淨化器', '風扇', '通風系統']
-    }
-  ];
 
-  const services = [
-    {
-      title: '專業安裝',
-      description: '專業技術團隊提供設備安裝服務',
-      icon: 'construct-outline'
-    },
-    {
-      title: '定期維護',
-      description: '定期維護保養，確保設備正常運作',
-      icon: 'settings-outline'
-    },
-    {
-      title: '技術支援',
-      description: '24小時技術支援與故障排除',
-      icon: 'call-outline'
-    },
-    {
-      title: '零件供應',
-      description: '原廠零件供應，確保設備品質',
-      icon: 'cube-outline'
-    }
-  ];
+  useEffect(() => {
+    const loadPageData = async () => {
+      try {
+        const areas = await fetchServicePageAreas('kitchen-equipment');
+        if (__DEV__) {
+          console.log('Kitchen Equipment data loaded:', {
+            categoriesTitle: areas?.categories?.title,
+            categoriesCount: areas?.categories?.items?.length,
+            firstCategory: areas?.categories?.items?.[0]?.title,
+          });
+        }
+        setPageAreas(areas);
+      } catch (error) {
+        if (__DEV__) {
+          console.log('Warning: unable to load kitchen-equipment page data:', error);
+        }
+        // fetchServicePageAreas already returns defaults on error
+        const defaults = require('../services/servicePageDefaults').SERVICE_PAGE_DEFAULTS['kitchen-equipment'];
+        setPageAreas(defaults);
+      }
+    };
 
-  const features = [
-    {
-      title: '節能環保',
-      description: '採用節能技術，降低營運成本',
-      icon: 'leaf-outline'
-    },
-    {
-      title: '安全可靠',
-      description: '符合安全標準，保障使用安全',
-      icon: 'shield-checkmark-outline'
-    },
-    {
-      title: '高效運作',
-      description: '提升廚房工作效率',
-      icon: 'speedometer-outline'
-    },
-    {
-      title: '易於操作',
-      description: '人性化設計，操作簡單方便',
-      icon: 'hand-left-outline'
-    }
-  ];
+    const loadMobileAppData = async () => {
+      try {
+        const areas = await fetchMobileAppData();
+        if (areas) {
+          setMobileAppData(areas);
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.log('Warning: unable to load mobile-app page data:', error);
+        }
+      }
+    };
 
-  const renderEquipmentCategory = (category: any) => (
-    <View key={category.id} style={styles.categoryCard}>
-      <View style={styles.categoryHeader}>
-        <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
-          <Ionicons name={category.icon as any} size={24} color="#fff" />
-        </View>
-        <View style={styles.categoryContent}>
+    loadPageData();
+    loadMobileAppData();
+  }, []);
+
+  const categoriesTitle = pageAreas?.categories?.title;
+  const categoriesDescription = pageAreas?.categories?.description;
+  const categoriesItems = pageAreas?.categories?.items || [];
+  const servicesTitle = pageAreas?.services?.title;
+  const servicesDescription = pageAreas?.services?.description;
+  const servicesItems = pageAreas?.services?.items || [];
+  const featuresTitle = pageAreas?.features?.title;
+  const featuresDescription = pageAreas?.features?.description;
+  const featuresItems = pageAreas?.features?.items || [];
+  const contactTitle = pageAreas?.contact?.title;
+  const contactDescription = pageAreas?.contact?.description;
+  const contactButtonText = pageAreas?.contact?.button1Text;
+  const headerTitle = mobileAppData?.categories?.category3?.title;
+
+  const renderCategory = (category: any, index: number) => (
+    <View key={index} style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>{category.title}</Text>
           <Text style={styles.categoryDescription}>{category.description}</Text>
-        </View>
-      </View>
+      {category.items && category.items.length > 0 && (
       <View style={styles.itemsContainer}>
-        {category.items.map((item: string, index: number) => (
-          <View key={index} style={styles.itemTag}>
+          {category.items.map((item: string, itemIndex: number) => (
+            <View key={itemIndex} style={styles.itemTag}>
             <Text style={styles.itemText}>{item}</Text>
           </View>
         ))}
       </View>
+      )}
     </View>
   );
 
   const renderService = (service: any, index: number) => (
     <View key={index} style={styles.serviceItem}>
-      <View style={styles.serviceIcon}>
-        <Ionicons name={service.icon as any} size={20} color="#10B981" />
-      </View>
-      <View style={styles.serviceContent}>
         <Text style={styles.serviceTitle}>{service.title}</Text>
         <Text style={styles.serviceDescription}>{service.description}</Text>
-      </View>
     </View>
   );
 
   const renderFeature = (feature: any, index: number) => (
     <View key={index} style={styles.featureItem}>
-      <View style={styles.featureIcon}>
-        <Ionicons name={feature.icon as any} size={20} color="#10B981" />
-      </View>
-      <View style={styles.featureContent}>
         <Text style={styles.featureTitle}>{feature.title}</Text>
         <Text style={styles.featureDescription}>{feature.description}</Text>
-      </View>
     </View>
   );
 
@@ -164,7 +110,6 @@ const KitchenEquipmentScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
@@ -172,59 +117,91 @@ const KitchenEquipmentScreen: React.FC = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>廚房設備</Text>
+        <Text style={styles.headerTitle}>{headerTitle || ''}</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>專業廚房設備</Text>
-            <Text style={styles.heroSubtitle}>
-              提供全套廚房設備解決方案，提升餐廳營運效率
-            </Text>
+        {/* Banner Section */}
+        {pageAreas?.banner?.imageUrl ? (
+          <View style={styles.bannerSection}>
+            <Image
+              source={{ uri: pageAreas.banner.imageUrl }}
+              style={styles.bannerImage}
+              resizeMode="cover"
+            />
           </View>
-          <View style={styles.heroImageContainer}>
-            <Ionicons name="restaurant" size={80} color="#10B981" />
-          </View>
-        </View>
+        ) : null}
 
-        {/* Equipment Categories Section */}
+        {/* Categories Section */}
+        {categoriesTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>設備類別</Text>
+          <Text style={styles.sectionTitle}>{categoriesTitle}</Text>
+            {categoriesDescription ? (
+              <Text style={styles.sectionDescription}>{categoriesDescription}</Text>
+            ) : null}
+            {categoriesItems.length > 0 ? (
           <View style={styles.categoriesContainer}>
-            {equipmentCategories.map(renderEquipmentCategory)}
+                {categoriesItems.map((category: any, index: number) => renderCategory(category, index))}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
 
         {/* Services Section */}
+        {servicesTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>服務項目</Text>
-          <View style={styles.servicesContainer}>
-            {services.map(renderService)}
+          <Text style={styles.sectionTitle}>{servicesTitle}</Text>
+            {servicesDescription ? (
+              <Text style={styles.sectionDescription}>{servicesDescription}</Text>
+            ) : null}
+            {servicesItems.length > 0 ? (
+              <View style={styles.servicesGrid}>
+                {servicesItems.map((service: any, index: number) => renderService(service, index))}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
 
         {/* Features Section */}
+        {featuresTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>設備特色</Text>
-          <View style={styles.featuresContainer}>
-            {features.map(renderFeature)}
+          <Text style={styles.sectionTitle}>{featuresTitle}</Text>
+            {featuresDescription ? (
+              <Text style={styles.sectionDescription}>{featuresDescription}</Text>
+            ) : null}
+            {featuresItems.length > 0 ? (
+              <View style={styles.featuresGrid}>
+                {featuresItems.map((feature: any, index: number) => renderFeature(feature, index))}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
 
         {/* Contact Section */}
+        {contactTitle ? (
         <View style={styles.contactSection}>
-          <Text style={styles.contactTitle}>立即諮詢</Text>
-          <Text style={styles.contactSubtitle}>
-            專業團隊為您提供廚房設備諮詢與報價服務
-          </Text>
-          <TouchableOpacity style={styles.contactButton}>
-            <Ionicons name="call-outline" size={20} color="#fff" />
-            <Text style={styles.contactButtonText}>聯絡我們</Text>
+          <Text style={styles.contactTitle}>{contactTitle}</Text>
+            {contactDescription ? (
+              <Text style={styles.contactSubtitle}>{contactDescription}</Text>
+            ) : null}
+            {contactButtonText ? (
+          <TouchableOpacity
+            style={styles.contactButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              const whatsappUrl = 'https://wa.me/85298636938?text=您好，我想查詢。';
+              Linking.openURL(whatsappUrl).catch((err) => {
+                console.error('Failed to open WhatsApp:', err);
+              });
+            }}
+          >
+            <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
+                <Text style={styles.contactButtonText}>{contactButtonText}</Text>
           </TouchableOpacity>
+            ) : null}
         </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -258,35 +235,14 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  heroSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 30,
-    backgroundColor: '#f8fafc',
+  bannerSection: {
+    width: '100%',
+    height: 200,
+    marginBottom: 20,
   },
-  heroContent: {
-    flex: 1,
-    marginRight: 20,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    lineHeight: 24,
-  },
-  heroImageContainer: {
-    width: 100,
-    height: 100,
-    backgroundColor: '#ecfdf5',
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
+  bannerImage: {
+    width: '100%',
+    height: '100%',
   },
   section: {
     paddingHorizontal: 20,
@@ -296,6 +252,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  sectionDescription: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
     marginBottom: 20,
   },
   categoriesContainer: {
@@ -303,43 +266,26 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     backgroundColor: '#fff',
-    padding: 20,
     borderRadius: 12,
+    padding: 32,
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  categoryIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  categoryContent: {
-    flex: 1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   categoryTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 5,
+    marginBottom: 16,
   },
   categoryDescription: {
     fontSize: 14,
     color: '#666',
-    lineHeight: 20,
+    lineHeight: 24,
+    marginBottom: 16,
   },
   itemsContainer: {
     flexDirection: 'row',
@@ -347,84 +293,67 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   itemTag: {
-    backgroundColor: '#fef3c7',
+    backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#fde68a',
+    borderRadius: 20,
   },
   itemText: {
     fontSize: 12,
-    color: '#92400e',
-    fontWeight: '500',
+    color: '#374151',
   },
-  servicesContainer: {
-    gap: 15,
+  servicesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   serviceItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: (width - 60) / 2,
     backgroundColor: '#f8fafc',
     padding: 15,
     borderRadius: 8,
-  },
-  serviceIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#ecfdf5',
-    borderRadius: 20,
-    justifyContent: 'center',
+    marginBottom: 15,
     alignItems: 'center',
-    marginRight: 15,
-  },
-  serviceContent: {
-    flex: 1,
   },
   serviceTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 3,
+    marginBottom: 5,
+    textAlign: 'center',
   },
   serviceDescription: {
     fontSize: 14,
     color: '#666',
+    textAlign: 'center',
   },
-  featuresContainer: {
-    gap: 15,
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: (width - 60) / 2,
     backgroundColor: '#f0fdf4',
     padding: 15,
     borderRadius: 8,
-  },
-  featureIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#dcfce7',
-    borderRadius: 20,
-    justifyContent: 'center',
+    marginBottom: 15,
     alignItems: 'center',
-    marginRight: 15,
-  },
-  featureContent: {
-    flex: 1,
   },
   featureTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 3,
+    marginBottom: 5,
+    textAlign: 'center',
   },
   featureDescription: {
     fontSize: 14,
     color: '#666',
+    textAlign: 'center',
   },
   contactSection: {
-    backgroundColor: '#10B981',
+    backgroundColor: 'rgb(11, 134, 40)',
     paddingHorizontal: 20,
     paddingVertical: 30,
     alignItems: 'center',
@@ -440,24 +369,32 @@ const styles = StyleSheet.create({
   },
   contactSubtitle: {
     fontSize: 16,
-    color: '#fff',
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     marginBottom: 20,
-    opacity: 0.9,
   },
   contactButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 25,
-    paddingVertical: 12,
-    borderRadius: 25,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 30,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    minHeight: 56,
   },
   contactButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#10B981',
-    marginLeft: 8,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0B8628',
+    marginLeft: 10,
+    letterSpacing: 0.5,
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,215 +9,90 @@ import {
   StatusBar,
   Image,
   Dimensions,
-  Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+// Removed direct Firestore import
+// Removed db import
+import { fetchServicePageAreas, fetchMobileAppData } from '../services/servicePageDefaults';
 
 const { width } = Dimensions.get('window');
 
 const DishesTablewareScreen: React.FC = () => {
   const navigation = useNavigation();
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [pageAreas, setPageAreas] = useState<any | null>(null);
+  const [mobileAppData, setMobileAppData] = useState<any | null>(null);
 
-  const dishesCategories = [
-    {
-      id: 1,
-      title: '餐具套裝',
-      description: '精美餐具套裝，提升用餐體驗',
-      icon: 'restaurant-outline',
-      color: '#10B981',
-      items: ['陶瓷餐具', '骨瓷餐具', '不鏽鋼餐具', '木製餐具', '竹製餐具'],
-      priceRange: 'HKD$ 200 - 2,000',
-      popular: true
-    },
-    {
-      id: 2,
-      title: '玻璃器皿',
-      description: '高品質玻璃器皿，透明美觀',
-      icon: 'wine-outline',
-      color: '#3B82F6',
-      items: ['酒杯', '水杯', '咖啡杯', '茶具', '玻璃碗', '玻璃盤'],
-      priceRange: 'HKD$ 50 - 800',
-      popular: true
-    },
-    {
-      id: 3,
-      title: '廚房用具',
-      description: '實用廚房用具，提升烹飪效率',
-      icon: 'cut-outline',
-      color: '#F59E0B',
-      items: ['刀具', '砧板', '鍋具', '鏟子', '勺子', '量杯'],
-      priceRange: 'HKD$ 100 - 1,500',
-      popular: false
-    },
-    {
-      id: 4,
-      title: '餐桌用品',
-      description: '精美餐桌用品，營造用餐氛圍',
-      icon: 'flower-outline',
-      color: '#8B5CF6',
-      items: ['桌布', '餐墊', '餐巾', '花瓶', '蠟燭', '裝飾品'],
-      priceRange: 'HKD$ 30 - 500',
-      popular: false
-    },
-    {
-      id: 5,
-      title: '清潔用品',
-      description: '專業清潔用品，保持餐具衛生',
-      icon: 'water-outline',
-      color: '#EF4444',
-      items: ['洗碗精', '清潔劑', '消毒液', '抹布', '海綿', '刷子'],
-      priceRange: 'HKD$ 20 - 200',
-      popular: false
-    },
-    {
-      id: 6,
-      title: '儲存用品',
-      description: '實用儲存用品，保持餐具整潔',
-      icon: 'archive-outline',
-      color: '#06B6D4',
-      items: ['餐具盒', '保鮮盒', '密封罐', '收納架', '餐具櫃', '防塵罩'],
-      priceRange: 'HKD$ 50 - 800',
-      popular: false
-    }
-  ];
+  const categoriesItems = pageAreas?.categories?.items || [];
+  const servicesItems = pageAreas?.services?.items || [];
 
-  const services = [
-    {
-      title: '客製化設計',
-      description: '根據餐廳風格提供客製化餐具設計',
-      icon: 'create-outline',
-      features: ['免費設計諮詢', '品牌定制', '材質選擇', '尺寸客製']
-    },
-    {
-      title: '品質保證',
-      description: '使用優質材料，提供品質保證',
-      icon: 'checkmark-circle-outline',
-      features: ['原廠保固', '品質認證', '售後服務', '維修保養']
-    },
-    {
-      title: '批量採購',
-      description: '提供批量採購優惠價格',
-      icon: 'cube-outline',
-      features: ['批量折扣', '免費配送', '庫存管理', '定期補貨']
-    },
-    {
-      title: '售後服務',
-      description: '完善的售後服務與維護保養',
-      icon: 'settings-outline',
-      features: ['定期保養', '故障維修', '零件更換', '技術支援']
-    }
-  ];
-
-  const testimonials = [
-    {
-      id: 1,
-      name: '李老闆',
-      restaurant: '港式茶餐廳',
-      comment: '餐具品質很好，服務也很專業，客人反應都不錯！',
-      rating: 5
-    },
-    {
-      id: 2,
-      name: '王經理',
-      restaurant: '日式料理店',
-      comment: '玻璃器皿很精美，提升了整體用餐體驗。',
-      rating: 5
-    },
-    {
-      id: 3,
-      name: '陳主廚',
-      restaurant: '西式餐廳',
-      comment: '廚房用具很實用，大大提升了工作效率。',
-      rating: 4
-    }
-  ];
-
-  const renderCategory = (category: any) => (
-    <TouchableOpacity
-      key={category.id}
-      style={[
-        styles.categoryCard,
-        selectedCategory === category.title && styles.selectedCategory
-      ]}
-      onPress={() => setSelectedCategory(
-        selectedCategory === category.title ? null : category.title
-      )}
-      activeOpacity={0.8}
-    >
-      <View style={styles.categoryHeader}>
-        <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
-          <Ionicons name={category.icon as any} size={24} color="#fff" />
-        </View>
-        <View style={styles.categoryInfo}>
+  const renderCategory = (category: any, index: number) => (
+    <View key={index} style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>{category.title}</Text>
           <Text style={styles.categoryDescription}>{category.description}</Text>
+      {category.priceRange ? (
           <Text style={styles.priceRange}>{category.priceRange}</Text>
-        </View>
-        {category.popular && (
-          <View style={styles.popularBadge}>
-            <Text style={styles.popularText}>熱門</Text>
-          </View>
-        )}
-      </View>
-      
-      {selectedCategory === category.title && (
-        <View style={styles.categoryDetails}>
-          <Text style={styles.itemsTitle}>產品項目：</Text>
+      ) : null}
+      {category.items && category.items.length > 0 && (
           <View style={styles.itemsContainer}>
-            {category.items.map((item: string, index: number) => (
-              <View key={index} style={styles.itemTag}>
+          {category.items.map((item: string, itemIndex: number) => (
+            <View key={itemIndex} style={styles.itemTag}>
                 <Text style={styles.itemText}>{item}</Text>
               </View>
             ))}
-          </View>
-          <TouchableOpacity style={styles.inquiryButton}>
-            <Text style={styles.inquiryButtonText}>立即詢價</Text>
-          </TouchableOpacity>
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 
   const renderService = (service: any, index: number) => (
-    <View key={index} style={styles.serviceCard}>
-      <View style={styles.serviceIcon}>
-        <Ionicons name={service.icon as any} size={24} color="#10B981" />
-      </View>
-      <View style={styles.serviceContent}>
+    <View key={index} style={styles.serviceItem}>
         <Text style={styles.serviceTitle}>{service.title}</Text>
         <Text style={styles.serviceDescription}>{service.description}</Text>
-        <View style={styles.featuresContainer}>
-          {service.features.map((feature: string, idx: number) => (
-            <View key={idx} style={styles.featureTag}>
-              <Text style={styles.featureText}>{feature}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
     </View>
   );
 
-  const renderTestimonial = (testimonial: any) => (
-    <View key={testimonial.id} style={styles.testimonialCard}>
-      <View style={styles.testimonialHeader}>
-        <Text style={styles.testimonialName}>{testimonial.name}</Text>
-        <Text style={styles.testimonialRestaurant}>{testimonial.restaurant}</Text>
-      </View>
-      <Text style={styles.testimonialComment}>"{testimonial.comment}"</Text>
-      <View style={styles.ratingContainer}>
-        {[...Array(5)].map((_, index) => (
-          <Ionicons
-            key={index}
-            name={index < testimonial.rating ? 'star' : 'star-outline'}
-            size={16}
-            color="#FFD700"
-          />
-        ))}
-      </View>
-    </View>
-  );
+
+  useEffect(() => {
+    const loadPageData = async () => {
+      try {
+        const areas = await fetchServicePageAreas('dishes-tableware');
+        setPageAreas(areas);
+      } catch (error) {
+        if (__DEV__) {
+          console.log(
+            'Warning: unable to load dishes-tableware page data for mobile, using defaults:',
+            error,
+          );
+        }
+      }
+    };
+
+    const loadMobileAppData = async () => {
+      try {
+        const areas = await fetchMobileAppData();
+        if (areas) {
+          setMobileAppData(areas);
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.log("Warning: unable to load mobile-app page data:", error);
+        }
+      }
+    };
+
+    loadPageData();
+    loadMobileAppData();
+  }, []);
+
+  const categoriesTitle = pageAreas?.categories?.title;
+  const categoriesDescription = pageAreas?.categories?.description;
+  const servicesTitle = pageAreas?.services?.title;
+  const contactTitle = pageAreas?.contact?.title;
+  const contactDescription = pageAreas?.contact?.description;
+  const contactButtonText = pageAreas?.contact?.button1Text;
+  const headerTitle = mobileAppData?.categories?.category4?.title;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -230,54 +105,71 @@ const DishesTablewareScreen: React.FC = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>餐碟餐具</Text>
+        <Text style={styles.headerTitle}>{headerTitle || ''}</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
+        {/* Banner Section */}
+        {pageAreas?.banner?.imageUrl ? (
+          <View style={styles.bannerSection}>
           <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=800' }}
-            style={styles.heroImage}
+              source={{ uri: pageAreas.banner.imageUrl }}
+              style={styles.bannerImage}
             resizeMode="cover"
           />
-          <View style={styles.heroOverlay}>
-            <Text style={styles.heroTitle}>專業餐碟餐具</Text>
-            <Text style={styles.heroSubtitle}>提升用餐體驗，展現餐廳品味</Text>
           </View>
-        </View>
+        ) : null}
 
         {/* Categories Section */}
+        {categoriesTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>產品分類</Text>
-          {dishesCategories.map(renderCategory)}
+          <Text style={styles.sectionTitle}>{categoriesTitle}</Text>
+            {categoriesDescription ? (
+              <Text style={styles.sectionDescription}>{categoriesDescription}</Text>
+            ) : null}
+            {categoriesItems.length > 0 ? (
+              categoriesItems.map((category: any, index: number) => renderCategory(category, index))
+            ) : null}
         </View>
+        ) : null}
 
         {/* Services Section */}
+        {servicesTitle ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>服務特色</Text>
-          {services.map(renderService)}
+          <Text style={styles.sectionTitle}>{servicesTitle}</Text>
+            {servicesItems.length > 0 ? (
+              <View style={styles.servicesGrid}>
+                {servicesItems.map((service: any, index: number) => renderService(service, index))}
+              </View>
+            ) : null}
         </View>
-
-        {/* Testimonials Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>客戶評價</Text>
-          {testimonials.map(renderTestimonial)}
-        </View>
+        ) : null}
 
         {/* Contact Section */}
+        {contactTitle ? (
         <View style={styles.contactSection}>
-          <Text style={styles.contactTitle}>立即聯繫我們</Text>
-          <Text style={styles.contactSubtitle}>專業團隊為您提供最優質的服務</Text>
+          <Text style={styles.contactTitle}>{contactTitle}</Text>
+            {contactDescription ? (
+              <Text style={styles.contactSubtitle}>{contactDescription}</Text>
+            ) : null}
+            {contactButtonText ? (
           <TouchableOpacity
             style={styles.contactButton}
-            onPress={() => Alert.alert('聯繫我們', '請撥打客服專線：+852 1234 5678')}
+                activeOpacity={0.8}
+                onPress={() => {
+                  const whatsappUrl = 'https://wa.me/85298636938?text=您好，我想查詢。';
+                  Linking.openURL(whatsappUrl).catch((err) => {
+                    console.error('Failed to open WhatsApp:', err);
+                  });
+                }}
           >
-            <Ionicons name="call" size={20} color="#fff" />
-            <Text style={styles.contactButtonText}>立即聯繫</Text>
+                <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
+                <Text style={styles.contactButtonText}>{contactButtonText}</Text>
           </TouchableOpacity>
+            ) : null}
         </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -311,32 +203,14 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  heroSection: {
+  bannerSection: {
+    width: '100%',
     height: 200,
-    position: 'relative',
     marginBottom: 20,
   },
-  heroImage: {
+  bannerImage: {
     width: '100%',
     height: '100%',
-  },
-  heroOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 20,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 5,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: '#fff',
   },
   section: {
     paddingHorizontal: 20,
@@ -346,110 +220,66 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 15,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  sectionDescription: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
   },
   categoryCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
+    padding: 20,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  selectedCategory: {
-    borderColor: '#10B981',
-    borderWidth: 2,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  categoryIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  categoryInfo: {
-    flex: 1,
-  },
   categoryTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  categoryDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  priceRange: {
-    fontSize: 12,
-    color: '#10B981',
-    fontWeight: '600',
-  },
-  popularBadge: {
-    backgroundColor: '#FF6B6B',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  popularText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  categoryDetails: {
-    marginTop: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  itemsTitle: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
     color: '#333',
     marginBottom: 10,
   },
+  categoryDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  priceRange: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9333ea',
+    marginBottom: 15,
+  },
   itemsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 15,
+    gap: 8,
   },
   itemTag: {
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
-    marginRight: 8,
-    marginBottom: 8,
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
   itemText: {
     fontSize: 12,
-    color: '#666',
+    color: '#374151',
   },
-  inquiryButton: {
-    backgroundColor: '#10B981',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  inquiryButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  serviceCard: {
+  servicesGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  serviceItem: {
+    width: (width - 60) / 2,
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
@@ -461,86 +291,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  serviceIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#f0f9ff',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
-  },
-  serviceContent: {
-    flex: 1,
   },
   serviceTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 5,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   serviceDescription: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 10,
-  },
-  featuresContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  featureTag: {
-    backgroundColor: '#e6f7ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  featureText: {
-    fontSize: 11,
-    color: '#1890ff',
-    fontWeight: '500',
-  },
-  testimonialCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  testimonialHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  testimonialName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  testimonialRestaurant: {
-    fontSize: 14,
-    color: '#666',
-  },
-  testimonialComment: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-    marginBottom: 10,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
+    textAlign: 'center',
   },
   contactSection: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: 'rgb(11, 134, 40)',
     padding: 30,
     alignItems: 'center',
     marginHorizontal: 20,
@@ -550,28 +316,36 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#fff',
     marginBottom: 10,
   },
   contactSubtitle: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     marginBottom: 20,
   },
   contactButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    minWidth: 200,
   },
   contactButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    color: '#0B8628',
+    fontSize: 17,
+    fontWeight: '700',
+    marginLeft: 10,
+    letterSpacing: 0.5,
   },
 });
 

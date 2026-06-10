@@ -11,6 +11,7 @@ interface ImageUploaderProps {
   disabled?: boolean;
   className?: string;
   folder?: string;
+  onUploadingChange?: (isUploading: boolean) => void;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -19,7 +20,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   onError,
   disabled = false,
   className = '',
-  folder = 'product_images'
+  folder = 'product_images',
+  onUploadingChange
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
     try {
       setIsUploading(true);
+      onUploadingChange?.(true);
       
       // Generate preview
       const preview = await generateImagePreview(file);
@@ -50,6 +53,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       setPreviewUrl(null);
     } finally {
       setIsUploading(false);
+      onUploadingChange?.(false);
     }
   };
 

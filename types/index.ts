@@ -7,17 +7,31 @@ export interface User {
   companyName?: string; // Company name (for suppliers)
   phone: string;
   address: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
   };
   membershipStatus: 'active' | 'inactive' | 'expired';
   membershipExpiry: Date | null;
   stripeCustomerId?: string;
   memberPoints: number; // Member points balance (HKD$1 = 1 point)
+  pendingPoints?: number;
   checkoutPassword?: string; // Password required for checkout
   role?: string; // User role: 'admin', 'supplier', 'salesTeam', 'salesMember', etc.
+  permissions?: {
+    dashboard?: boolean;
+    orders?: boolean;
+    products?: boolean;
+    members?: boolean;
+    suppliers?: boolean;
+    salesTeam?: boolean;
+    pointsApprovals?: boolean;
+    inventory?: boolean;
+    settings?: boolean;
+    content?: boolean;
+    system?: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +48,7 @@ export interface Product {
   stockQuantity: number;
   imageUrl: string;
   isAvailable: boolean;
+  showOnHomepage?: boolean;
   supplier: string;
   createdAt: Date;
   updatedAt: Date;

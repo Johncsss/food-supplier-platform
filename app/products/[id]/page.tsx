@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, ShoppingCart, Package, Check, X, AlertCircle, Plus, Minus } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Package, Check, X, AlertCircle, Plus, Minus, Heart } from 'lucide-react';
 import { Product } from '@/shared/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { useCart } from '@/components/providers/CartProvider';
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 interface Supplier {
   id: string;
@@ -19,13 +20,15 @@ interface Supplier {
 export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const productId = params.id as string;
+  const productId = params?.id as string;
   
   const { addToCart, state, getItemQuantity, updateQuantity } = useCart();
+  const { firebaseUser } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [isFavorited, setIsFavorited] = useState(false);
   
   // Get the category of items in the cart
   const cartCategory = state.items.length > 0 ? state.items[0].category : null;
@@ -97,6 +100,25 @@ export default function ProductDetailPage() {
     }
   }, [productId]);
 
+  // Check if product is in user's favorites
+  useEffect(() => {
+    const checkFavorite = async () => {
+      try {
+        if (!firebaseUser?.uid || !productId) {
+          setIsFavorited(false);
+          return;
+        }
+        const favRef = doc(db, 'users', firebaseUser.uid, 'favorites', productId);
+        const favSnap = await getDoc(favRef);
+        setIsFavorited(favSnap.exists());
+      } catch (e) {
+        // Non-fatal; keep as not favorited if check fails
+        setIsFavorited(false);
+      }
+    };
+    checkFavorite();
+  }, [firebaseUser?.uid, productId]);
+
   const handleAddToCart = (product: Product) => {
     addToCart({
       productId: product.id,
@@ -111,8 +133,48 @@ export default function ProductDetailPage() {
   };
 
   const handleQuantityChange = (product: Product, newQuantity: number) => {
-    if (newQuantity >= product.minOrderQuantity) {
+    if (newQuantity <= 0) {
+      updateQuantity(product.id, 0);
+      return;
+    }
+
+    if (newQuantity < product.minOrderQuantity) {
+      updateQuantity(product.id, 0);
+      return;
+    }
+
       updateQuantity(product.id, newQuantity);
+  };
+
+  const handleAddFavorite = async () => {
+    if (!product) return;
+    if (!firebaseUser?.uid) {
+      router.push('/login');
+      return;
+    }
+    try {
+      const favRef = doc(db, 'users', firebaseUser.uid, 'favorites', product.id);
+      await setDoc(
+        favRef,
+        {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          imageUrl: product.imageUrl,
+          category: product.category,
+          createdAt: new Date(),
+        },
+        { merge: true }
+      );
+      setIsFavorited(true);
+      if (typeof window !== 'undefined') {
+        window.alert('已加入收藏');
+      }
+    } catch (e) {
+      console.error('Failed to add favorite (web):', e);
+      if (typeof window !== 'undefined') {
+        window.alert('加入收藏失敗，請稍後再試');
+      }
     }
   };
 
@@ -303,7 +365,7 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* Add to Cart Section */}
+            {/* Add to Cart / Favorite Section */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               {cartQuantity > 0 ? (
                 <div className="space-y-4">
@@ -313,7 +375,7 @@ export default function ProductDetailPage() {
                       <button
                         onClick={() => handleQuantityChange(product, cartQuantity - 1)}
                         className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-                        disabled={cartQuantity <= product.minOrderQuantity}
+                        disabled={cartQuantity <= 0}
                       >
                         <Minus className="w-4 h-4" />
                       </button>
@@ -353,6 +415,21 @@ export default function ProductDetailPage() {
                   </span>
                 </button>
               )}
+              {/* Add to Favorites */}
+              <div className="mt-4">
+                <button
+                  onClick={handleAddFavorite}
+                  disabled={isFavorited}
+                  className={`w-full border py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
+                    isFavorited
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <Heart className="w-5 h-5 mr-2" />
+                  <span>{isFavorited ? '已在收藏清單' : '加入收藏'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

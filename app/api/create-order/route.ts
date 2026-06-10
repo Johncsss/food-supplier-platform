@@ -6,7 +6,7 @@ import admin, { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
 export async function POST(request: NextRequest) {
   try {
     console.log('Order creation API called');
-    const { items, totalAmount, user } = await request.json();
+    const { items, totalAmount, user, pointsUsed, pointsTransactionId, deliveryDate, deliveryTime } = await request.json();
     
     console.log('Received order data:', {
       itemCount: items?.length || 0,
@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
       firebaseUid: user?.firebaseUid,
       userEmail: user?.email,
       restaurantName: user?.restaurantName,
-      source: 'mobile-app'
+      deliveryDate,
+      source: 'web'
     });
     console.log('Full user object:', JSON.stringify(user, null, 2));
 
@@ -56,6 +57,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let resolvedDeliveryDate: Date;
+    if (deliveryDate) {
+      const parsed = new Date(deliveryDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        resolvedDeliveryDate = parsed;
+      } else {
+        console.warn('Invalid deliveryDate provided, falling back to default schedule:', deliveryDate);
+        resolvedDeliveryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      }
+    } else {
+      resolvedDeliveryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+
     // Create order object for Firestore
     const orderData = {
       userId: user.id,
@@ -73,8 +87,12 @@ export async function POST(request: NextRequest) {
         unit: item.unit || ''
       })),
       totalAmount: totalAmount || 0,
+      pointsUsed: pointsUsed || totalAmount || 0, // Points used for this order
+      pointsTransactionId: pointsTransactionId || '', // Transaction ID for points deduction
       status: 'pending',
-      deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+      deliveryDate: resolvedDeliveryDate,
+      deliveryDateSource: deliveryDate ? 'user-selected' : 'system-default',
+      ...(deliveryTime ? { deliveryTime } : {}),
       deliveryAddress: user.address || {
         street: '',
         city: '',
@@ -82,7 +100,7 @@ export async function POST(request: NextRequest) {
         zipCode: ''
       },
       notes: '',
-      source: 'mobile-app', // Add source to track where the order came from
+      source: 'web', // Changed from 'mobile-app' to 'web' for website orders
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };

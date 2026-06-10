@@ -11,9 +11,11 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../hooks/useAuth';
 
 const RegisterScreen: React.FC = () => {
+  const navigation = useNavigation();
   const [name, setName] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
   const [email, setEmail] = useState('');
@@ -46,6 +48,13 @@ const RegisterScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => (navigation as any).goBack()}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.backButtonText}>返回</Text>
+      </TouchableOpacity>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -149,6 +158,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 70,
+    left: 16,
+    zIndex: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
+  backButtonText: {
+    fontSize: 15,
+    color: '#111827',
   },
 });
 

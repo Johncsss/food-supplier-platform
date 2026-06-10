@@ -42,6 +42,15 @@ const nextConfig = {
   experimental: {
     esmExternals: 'loose',
   },
+  async rewrites() {
+    return [
+      // Map legacy/mobile API paths to working route handlers
+      {
+        source: '/api/purchase-points',
+        destination: '/api/test',
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig 

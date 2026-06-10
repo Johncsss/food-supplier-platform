@@ -1,29 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { adminDb, adminFieldValue } from '@/lib/firebaseAdmin';
+
+// Ensure Node.js runtime for Firebase Admin
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { orderId, message, userId, userEmail, restaurantName, supplierId, supplierCompanyName } = await request.json();
+    const {
+      orderId,
+      message,
+      userId,
+      userEmail,
+      restaurantName,
+      supplierId: supplierIdInput,
+      supplierCompanyName: supplierCompanyNameInput,
+    } = await request.json();
 
     // Validate required fields
-    if (!orderId || !message || !userId || !supplierId) {
+    if (!orderId || !message || !userId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Verify the order exists
-    const orderRef = doc(db, 'orders', orderId);
-    const orderSnap = await getDoc(orderRef);
-    
-    if (!orderSnap.exists()) {
+    // Try to fetch the order, but don't fail the request if not found
+    let orderData: any = {};
+    try {
+      const orderRef = adminDb.collection('orders').doc(String(orderId));
+      const orderSnap = await orderRef.get();
+      if (orderSnap.exists) {
+        orderData = orderSnap.data() || {};
+      }
+    } catch (e) {
+      // Non-fatal: allow complaint creation to proceed even if order lookup fails
+      orderData = {};
+    }
+
+    const derivedSupplierId =
+      supplierIdInput ||
+      orderData.supplierId ||
+      orderData.supplier ||
+      orderData.supplierUid ||
+      orderData.items?.find((item: any) => item?.supplierId)?.supplierId ||
+      orderData.items?.find((item: any) => item?.supplier)?.supplier ||
+      '';
+
+    if (!derivedSupplierId) {
       return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
+        { error: 'Unable to determine supplier information for this order' },
+        { status: 400 }
       );
     }
+
+    const derivedSupplierCompanyName =
+      supplierCompanyNameInput ||
+      orderData.supplierCompanyName ||
+      orderData.supplierName ||
+      orderData.supplier ||
+      orderData.items?.find((item: any) => item?.supplierCompanyName)?.supplierCompanyName ||
+      derivedSupplierId;
 
     // Create complaint document
     const complaintData = {
@@ -31,20 +68,20 @@ export async function POST(request: NextRequest) {
       userId,
       userEmail: userEmail || '',
       restaurantName: restaurantName || '',
-      supplierId,
-      supplierCompanyName: supplierCompanyName || '',
+      supplierId: derivedSupplierId,
+      supplierCompanyName: derivedSupplierCompanyName || '',
       message,
       status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      createdAt: adminFieldValue.serverTimestamp(),
+      updatedAt: adminFieldValue.serverTimestamp()
     };
 
-    const complaintRef = await addDoc(collection(db, 'complaints'), complaintData);
+    const complaintRef = await adminDb.collection('complaints').add(complaintData);
 
     return NextResponse.json({
       success: true,
       complaintId: complaintRef.id,
-      message: 'Complaint submitted successfully'
+      message: 'Message submitted successfully'
     });
 
   } catch (error) {

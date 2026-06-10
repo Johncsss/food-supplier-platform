@@ -9,6 +9,11 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 
+    match /points_purchase_requests/{requestId} {
+      allow create: if true;
+      allow read, update: if request.auth != null && request.auth.token.admin == true;
+    }
+
     // Orders collection - users can read their own orders, admins can read all
     match /orders/{orderId} {
       allow read: if request.auth != null && (
@@ -49,7 +54,26 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.token.admin == true;
     }
 
-    // Admin settings - only admins can access
+    // Points settings - allow authenticated users to read plans, only admins can modify
+    match /admin/pointsSettings {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Contact settings - allow public read (for WhatsApp button), only admins can write
+    match /admin/contactSettings {
+      allow read: if true; // Public read for WhatsApp number
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Quick actions - allow public read (for header navigation), only admins can write
+    match /admin/quickActions {
+      allow read: if true; // Public read for header navigation items
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Admin settings - only admins can access other documents
+    // Note: More specific rules (pointsSettings, contactSettings, quickActions) are evaluated first
     match /admin/{document=**} {
       allow read, write: if request.auth != null && request.auth.token.admin == true;
     }
@@ -106,12 +130,26 @@ service cloud.firestore {
       );
     }
 
-    // Pages collection (CMS) - admins can write, authenticated users can read mobile-app page
+    // Pages collection (CMS) - allow public read for public-facing pages
     match /pages/{pageId} {
-      // Allow authenticated users to read mobile-app page (for mobile app to display banners)
-      allow read: if request.auth != null && (
-        request.auth.token.admin == true || 
-        pageId == 'mobile-app'
+      // Allow anyone to read public CMS pages (for banners and content display)
+      // Public pages: mobile-app, about, partners, faq, contact, pricing, footer, and all service pages
+      allow read: if (
+        pageId == 'mobile-app' || // Public read for mobile-app page
+        pageId == 'about' || // Public read for about page
+        pageId == 'partners' || // Public read for partners page
+        pageId == 'faq' || // Public read for FAQ page
+        pageId == 'contact' || // Public read for contact page
+        pageId == 'pricing' || // Public read for pricing page
+        pageId == 'footer' || // Public read for footer page
+        pageId == 'dishes-tableware' || // Public read for service pages
+        pageId == 'promotion' ||
+        pageId == 'restaurant-systems' ||
+        pageId == 'restaurant-furniture' ||
+        pageId == 'restaurant-maintenance' ||
+        pageId == 'restaurant-construction' ||
+        pageId == 'kitchen-equipment' ||
+        (request.auth != null && request.auth.token.admin == true) // Admins can read all pages
       );
       // Only admins can write
       allow write: if request.auth != null && request.auth.token.admin == true;
@@ -121,6 +159,16 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if true; // Anyone can read settings (logo, etc.)
       allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // User favorites subcollection
+    match /users/{userId}/favorites/{favoriteId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Carts collection - users can read/write only their own cart (doc id == Firebase Auth uid)
+    match /carts/{cartId} {
+      allow read, write: if request.auth != null && request.auth.uid == cartId;
     }
 
     // Default rule - deny all other access

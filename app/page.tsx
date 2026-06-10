@@ -3,18 +3,25 @@ import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
 import UnauthorizedHandler from '@/components/UnauthorizedHandler';
 import CategoriesSection from '@/components/ui/CategoriesSection';
-import { Check, Star, Truck, Shield, Clock, Users } from 'lucide-react';
+import EditableHeroBanner from '@/components/ui/EditableHeroBanner';
+import EditableHeroSection from '@/components/ui/EditableHeroSection';
+import EditableFeaturesSection from '@/components/ui/EditableFeaturesSection';
+import EditableTestimonialsSection from '@/components/ui/EditableTestimonialsSection';
+import EditableCTASection from '@/components/ui/EditableCTASection';
 import { t } from '@/lib/translate';
 import { categories as defaultCategories } from '@/shared/products';
 import { Category } from '@/shared/types';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, doc, getDoc } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebaseAdmin';
 
 async function getHomepageCmsData() {
   try {
-    const pageDoc = await getDoc(doc(db, 'pages', 'homepage'));
-    if (pageDoc.exists()) {
-      return pageDoc.data().areas || null;
+    // Use Admin SDK on the server so reads work for anonymous visitors
+    const snap = await adminDb.doc('pages/homepage').get();
+    if (snap.exists) {
+      const data = snap.data() as any;
+      return data?.areas || null;
     }
     return null;
   } catch (error) {
@@ -94,9 +101,14 @@ export default async function Home() {
   }
   const heroTitle = heroData.title || t('Premium Food Supply for');
   const heroTitleSpan = heroData.titleSpan || t('Restaurants');
-  const heroDescription = heroData.description || t('Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.');
+  let heroDescription = heroData.description || t('Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.');
+  // Temporary migration: normalize older wordings to the latest copy
+  if (heroDescription === '透過我們的年度會員計劃，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。' ||
+      heroDescription === '透過我們的優質服務，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。') {
+    heroDescription = '透過iFoodPulse，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。';
+  }
   const button1Text = heroData.button1Text || t('Start Your Membership');
-  const button1Link = heroData.button1Link || '/register';
+  const button1Link = heroData.button1Link || '/partners/apply';
   const button2Text = heroData.button2Text || t('Browse Products');
   const button2Link = heroData.button2Link || '/products';
   
@@ -106,207 +118,59 @@ export default async function Home() {
       <Header />
       
       {/* Hero Banner Image Section */}
-      {bannerImageUrl && bannerImageUrl.trim() !== '' && (
-        <section className="w-full bg-gray-100">
-          <div className="w-full overflow-hidden">
-            <img 
-              src={bannerImageUrl} 
-              alt="Hero banner" 
-              className="w-full h-auto object-cover"
-              style={{ maxHeight: '600px', width: '100%', display: 'block' }}
-              onError={(e) => {
-                console.error('Failed to load hero banner image. URL:', bannerImageUrl);
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                // Hide the entire section if image fails to load
-                const section = target.closest('section');
-                if (section) {
-                  section.style.display = 'none';
-                }
-              }}
-              onLoad={() => {
-                console.log('Hero banner image loaded successfully:', bannerImageUrl);
-              }}
-            />
-          </div>
-        </section>
-      )}
+      <EditableHeroBanner initialBannerUrl={bannerImageUrl} />
 
       {/* Hero Section */}
-      <section 
-        className={`${bannerImageUrl ? 'bg-white' : 'bg-gradient-to-br from-primary-600 to-primary-800'} ${bannerImageUrl ? 'text-gray-900' : 'text-white'} py-24`}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h1 className={`text-4xl md:text-6xl font-bold mb-6 ${bannerImageUrl ? 'text-gray-900' : 'text-white'}`}>
-              {heroTitleSpan && heroTitle.includes(heroTitleSpan) ? (
-                <>
-                  {heroTitle.split(heroTitleSpan)[0]}
-                  <span className={bannerImageUrl ? 'text-primary-600' : 'text-secondary-300'}>{heroTitleSpan}</span>
-                  {heroTitle.split(heroTitleSpan)[1]}
-                </>
-              ) : (
-                <>
-                  {heroTitle}
-                  {heroTitleSpan && <span className={bannerImageUrl ? 'text-primary-600' : 'text-secondary-300'}> {heroTitleSpan}</span>}
-                </>
-              )}
-            </h1>
-            <p className={`text-xl md:text-2xl mb-8 max-w-3xl mx-auto ${bannerImageUrl ? 'text-gray-600' : 'text-primary-100'}`}>
-              {heroDescription}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href={button1Link} className={`${bannerImageUrl ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'btn-secondary'} text-lg px-8 py-4 rounded-lg transition-colors`}>
-                {button1Text}
-              </Link>
-              <Link href={button2Link} className={`${bannerImageUrl ? 'border-2 border-primary-600 text-primary-600 hover:bg-primary-600 hover:text-white' : 'btn-outline border-white text-white hover:bg-white hover:text-primary-600'} text-lg px-8 py-4 rounded-lg transition-colors`}>
-                {button2Text}
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+      <EditableHeroSection 
+        initialData={{
+          title: heroTitle,
+          titleSpan: heroTitleSpan,
+          description: heroDescription,
+          button1Text,
+          button1Link,
+          bannerImageUrl,
+        }}
+      />
 
       {/* Features Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              {t('Why Choose FoodSupplier Pro?')}
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              {t('We provide everything your restaurant needs with premium quality and reliable service.')}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Truck className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('Fast Delivery')}</h3>
-              <p className="text-gray-600">
-                {t('Get your orders delivered within 24-48 hours to your restaurant doorstep.')}
-              </p>
-            </div>
-
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Shield className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('Quality Guaranteed')}</h3>
-              <p className="text-gray-600">
-                {t('All products are carefully selected and meet the highest quality standards.')}
-              </p>
-            </div>
-
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Clock className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('24/7 Support')}</h3>
-              <p className="text-gray-600">
-                {t('Our customer support team is available around the clock to help you.')}
-              </p>
-            </div>
-
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Users className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('Restaurant Network')}</h3>
-              <p className="text-gray-600">
-                {t('Join our network of successful restaurants and get exclusive benefits.')}
-              </p>
-            </div>
-
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Star className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('Premium Products')}</h3>
-              <p className="text-gray-600">
-                {t('Access to premium ingredients and specialty products for your menu.')}
-              </p>
-            </div>
-
-            <div className="card p-8 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Check className="w-8 h-8 text-primary-600" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">{t('Easy Ordering')}</h3>
-              <p className="text-gray-600">
-                {t('Simple online ordering system with order tracking and management.')}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
+      <EditableFeaturesSection 
+        initialData={cmsData?.features ? {
+          title: cmsData.features.title,
+          description: cmsData.features.description,
+          blocks: cmsData.features.block1 ? [
+            cmsData.features.block1,
+            cmsData.features.block2,
+            cmsData.features.block3,
+            cmsData.features.block4,
+            cmsData.features.block5,
+            cmsData.features.block6,
+          ].filter(Boolean) : undefined,
+        } : undefined}
+      />
 
       {/* Categories Section - Only visible to logged-in users */}
       <CategoriesSection categories={categoriesWithCounts} />
 
       {/* Testimonials Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              {t('What Our Members Say')}
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              {t('Join thousands of satisfied restaurants across the country.')}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                name: t('Sarah Johnson'),
-                restaurant: t('The Garden Bistro'),
-                text: t('FoodSupplier Pro has transformed our restaurant operations. The quality and reliability are unmatched.'),
-              },
-              {
-                name: t('Michael Chen'),
-                restaurant: t('Golden Dragon'),
-                text: t('Excellent service and premium products. Our customers love the quality of ingredients we use.'),
-              },
-              {
-                name: t('Emily Rodriguez'),
-                restaurant: t('Café Luna'),
-                text: t('The membership program is worth every penny. We save time and money while getting better products.'),
-              },
-            ].map((testimonial, index) => (
-              <div key={index} className="card p-8">
-                <p className="text-gray-600 mb-6 italic">"{testimonial.text}"</p>
-                <div>
-                  <p className="font-semibold text-gray-900">{testimonial.name}</p>
-                  <p className="text-gray-500 text-sm">{testimonial.restaurant}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <EditableTestimonialsSection 
+        initialData={cmsData?.testimonials ? {
+          title: cmsData.testimonials.title,
+          description: cmsData.testimonials.description,
+          items: cmsData.testimonials.item1 ? [
+            cmsData.testimonials.item1,
+            cmsData.testimonials.item2,
+            cmsData.testimonials.item3,
+          ].filter(Boolean) : undefined,
+        } : undefined}
+      />
 
       {/* CTA Section */}
-      <section className="py-20 bg-primary-600 text-white">
-        <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
-            {t('Ready to Transform Your Restaurant?')}
-          </h2>
-          <p className="text-xl mb-8 text-primary-100">
-            {t('Join our membership program today and start enjoying premium food supply services.')}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/register" className="btn-secondary text-lg px-8 py-4">
-              {t('Start Free Trial')}
-            </Link>
-            <Link href="/pricing" className="btn-outline text-lg px-8 py-4 border-white text-white hover:bg-white hover:text-primary-600">
-              {t('View Pricing')}
-            </Link>
-          </div>
-        </div>
-      </section>
+      <EditableCTASection 
+        initialData={cmsData?.cta ? {
+          title: cmsData.cta.title,
+          description: cmsData.cta.description,
+        } : undefined}
+      />
 
       <Footer />
     </div>

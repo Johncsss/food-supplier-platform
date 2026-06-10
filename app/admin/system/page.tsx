@@ -41,8 +41,15 @@ const DEFAULT_MENU_CONFIG: MenuConfig[] = [
     enabled: true,
   },
   {
+    id: 'products',
+    name: '產品',
+    href: '/admin/products',
+    icon: 'Package',
+    enabled: true,
+  },
+  {
     id: 'members',
-    name: '餐廳會員',
+    name: '餐廳管理',
     href: '/admin/members',
     icon: 'Users',
     enabled: true,
@@ -59,13 +66,6 @@ const DEFAULT_MENU_CONFIG: MenuConfig[] = [
     name: '供應商',
     href: '/admin/suppliers',
     icon: 'Store',
-    enabled: true,
-  },
-  {
-    id: 'products',
-    name: '產品',
-    href: '/admin/products',
-    icon: 'Package',
     enabled: true,
   },
   {
@@ -116,8 +116,8 @@ export default function AdminSystem() {
           const data = snap.data() as any;
           if (Array.isArray(data.menus) && data.menus.length > 0) {
             // Merge existing menus with default config to add any new items
-            const existingMenusMap = new Map(
-              data.menus.map((m: MenuConfig) => [m.id, m])
+            const existingMenusMap: Map<string, MenuConfig> = new Map(
+              (data.menus as MenuConfig[]).map((m) => [m.id, m])
             );
             const mergedMenus = DEFAULT_MENU_CONFIG.map(defaultMenu => {
               const existing = existingMenusMap.get(defaultMenu.id);

@@ -9,7 +9,7 @@ export default function UnauthorizedHandler() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const error = searchParams.get('error');
+    const error = searchParams?.get('error');
     if (error === 'unauthorized') {
       toast.error(t('You do not have administrator privileges to access that page.'));
     }

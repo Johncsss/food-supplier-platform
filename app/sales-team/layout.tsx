@@ -120,7 +120,7 @@ export default function SalesTeamLayout({
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900">銷售團隊</h1>
-              <p className="text-xs text-gray-500">管理面板</p>
+              <p className="text-xs text-gray-500">管理系統</p>
             </div>
           </div>
           <button

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { t } from '@/lib/translate';
 import { Users, Mail, Phone, Award, Plus, Search, Edit, Trash2, X, TrendingUp, DollarSign, Package, Calendar, Eye } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -9,6 +9,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 
 interface SalesTeam {
   id: string;
+  firebaseUid?: string;
   teamName: string;
   teamLeader: string;
   phone: string;
@@ -30,6 +31,31 @@ interface TeamMember {
   status: 'active' | 'inactive';
 }
 
+interface PerformanceData {
+  date: string;
+  amount: number;
+  commission: number;
+  orders: number;
+}
+
+const orderStatusColors: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  processing: 'bg-purple-100 text-purple-800',
+  shipped: 'bg-indigo-100 text-indigo-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+};
+
+const orderStatusLabels: Record<string, string> = {
+  pending: '待處理',
+  confirmed: '已確認',
+  processing: '處理中',
+  shipped: '已發貨',
+  delivered: '已送達',
+  cancelled: '已取消',
+};
+
 export default function SalesTeamPage() {
   const { firebaseUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,6 +72,10 @@ export default function SalesTeamPage() {
   const [memberPerformancePeriod, setMemberPerformancePeriod] = useState<'day' | 'month' | 'year'>('month');
   const [showMemberTransactions, setShowMemberTransactions] = useState(false);
   const [selectedPeriodData, setSelectedPeriodData] = useState<any>(null);
+  const [memberPerformanceData, setMemberPerformanceData] = useState<PerformanceData[]>([]);
+  const [loadingMemberPerformance, setLoadingMemberPerformance] = useState(false);
+  const [memberOrders, setMemberOrders] = useState<any[]>([]);
+  const [transactionsForSelectedPeriod, setTransactionsForSelectedPeriod] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     teamName: '',
     teamLeader: '',
@@ -57,6 +87,17 @@ export default function SalesTeamPage() {
   });
   const [isCreating, setIsCreating] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+  const [isCreatingMember, setIsCreatingMember] = useState(false);
+  const [memberFormData, setMemberFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    position: '',
+    commissionRate: 0,
+    password: '',
+    salesTeamId: '',
+  });
 
   // Fetch sales teams from Firestore
   useEffect(() => {
@@ -74,6 +115,7 @@ export default function SalesTeamPage() {
           const data = doc.data();
           return {
             id: doc.id,
+            firebaseUid: data.firebaseUid || '',
             teamName: data.teamName || '',
             teamLeader: data.teamLeader || '',
             phone: data.phone || '',
@@ -109,6 +151,29 @@ export default function SalesTeamPage() {
   const totalTeamSales = teams.reduce((sum, team) => sum + team.totalSales, 0);
   const activeTeams = teams.filter(t => t.status === 'active').length;
   const totalMembers = teams.reduce((sum, team) => sum + team.memberCount, 0);
+  const selectedTeamMembersTotal = teamMembers.reduce(
+    (sum, member) => sum + (member.totalSales || 0),
+    0,
+  );
+  const selectedTeamTotalSales =
+    showTeamDetailsModal && selectedTeam
+      ? selectedTeamMembersTotal > 0
+        ? selectedTeamMembersTotal
+        : selectedTeam.totalSales || 0
+      : 0;
+
+  useEffect(() => {
+    // When teams are loaded, default the member form's team selection if empty
+    if (teams.length > 0 && !memberFormData.salesTeamId) {
+      const firstTeamWithUid = teams.find(t => t.firebaseUid);
+      if (firstTeamWithUid) {
+        setMemberFormData(prev => ({
+          ...prev,
+          salesTeamId: firstTeamWithUid.firebaseUid || '',
+        }));
+      }
+    }
+  }, [teams, memberFormData.salesTeamId]);
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,6 +349,125 @@ export default function SalesTeamPage() {
     });
   };
 
+  const handleOpenMemberModal = (team?: SalesTeam) => {
+    // If opened from a specific team, preselect that team
+    if (team?.firebaseUid) {
+      setMemberFormData(prev => ({
+        ...prev,
+        salesTeamId: team.firebaseUid || '',
+      }));
+    } else if (!memberFormData.salesTeamId && teams.length > 0) {
+      const firstTeamWithUid = teams.find(t => t.firebaseUid);
+      if (firstTeamWithUid) {
+        setMemberFormData(prev => ({
+          ...prev,
+          salesTeamId: firstTeamWithUid.firebaseUid || '',
+        }));
+      }
+    }
+    setIsMemberModalOpen(true);
+  };
+
+  const handleCloseMemberModal = () => {
+    setIsMemberModalOpen(false);
+    setMemberFormData({
+      name: '',
+      email: '',
+      phone: '',
+      position: '',
+      commissionRate: 0,
+      password: '',
+      salesTeamId: '',
+    });
+  };
+
+  const handleCreateMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!memberFormData.salesTeamId) {
+      alert('請選擇銷售團隊');
+      return;
+    }
+
+    setIsCreatingMember(true);
+
+    try {
+      const response = await fetch('/api/create-sales-member', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: memberFormData.name,
+          email: memberFormData.email,
+          phone: memberFormData.phone,
+          position: memberFormData.position,
+          commissionRate: memberFormData.commissionRate,
+          password: memberFormData.password,
+          salesTeamId: memberFormData.salesTeamId,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create sales member');
+      }
+
+      const result = await response.json();
+
+      // Update team member list if the selected team is currently viewed
+      if (selectedTeam && selectedTeam.firebaseUid === memberFormData.salesTeamId) {
+        const newMember: TeamMember = {
+          id: result.memberId,
+          name: memberFormData.name,
+          email: memberFormData.email,
+          phone: memberFormData.phone,
+          position: memberFormData.position,
+          commissionRate: memberFormData.commissionRate,
+          totalSales: 0,
+          status: 'active',
+        };
+        setTeamMembers(prev => [newMember, ...prev]);
+
+        // Update member count in selected team and teams list
+        setSelectedTeam(prev =>
+          prev
+            ? {
+                ...prev,
+                memberCount: prev.memberCount + 1,
+              }
+            : prev,
+        );
+        setTeams(prev =>
+          prev.map(team =>
+            team.id === selectedTeam.id
+              ? { ...team, memberCount: team.memberCount + 1 }
+              : team,
+          ),
+        );
+      }
+
+      alert('銷售員已成功建立！');
+
+      // Reset form and close modal
+      setMemberFormData({
+        name: '',
+        email: '',
+        phone: '',
+        position: '',
+        commissionRate: 0,
+        password: '',
+        salesTeamId: '',
+      });
+      setIsMemberModalOpen(false);
+    } catch (error: any) {
+      console.error('Error creating sales member:', error);
+      alert('建立銷售員失敗: ' + error.message);
+    } finally {
+      setIsCreatingMember(false);
+    }
+  };
+
   const handleViewTeamDetails = async (team: SalesTeam) => {
     setSelectedTeam(team);
     setShowTeamDetailsModal(true);
@@ -335,50 +519,161 @@ export default function SalesTeamPage() {
     }
   };
 
-  const handleViewMemberPerformance = (member: TeamMember) => {
+  const fetchPerformanceData = useCallback(
+    async (member: TeamMember, period: 'day' | 'month' | 'year') => {
+      if (!member) return;
+
+      setLoadingMemberPerformance(true);
+      try {
+        // Find all users that have this sales member as their staffName
+        const usersRef = collection(db, 'users');
+        const usersSnapshot = await getDocs(usersRef);
+        const userIds: string[] = [];
+
+        usersSnapshot.docs.forEach((doc) => {
+          const userData = doc.data() as any;
+          const staffName = userData.staffName;
+          const userId = userData.id || doc.id;
+          const firebaseUid = userData.firebaseUid || userId;
+
+          if (staffName === member.name) {
+            userIds.push(userId);
+            if (firebaseUid && firebaseUid !== userId) {
+              userIds.push(firebaseUid);
+            }
+          }
+        });
+
+        if (userIds.length === 0) {
+          setMemberPerformanceData([]);
+          setMemberOrders([]);
+          return;
+        }
+
+        // Fetch all orders for these users
+        const ordersRef = collection(db, 'orders');
+        const ordersSnapshot = await getDocs(ordersRef);
+        const orders: any[] = [];
+
+        ordersSnapshot.docs.forEach((doc) => {
+          const orderData = doc.data() as any;
+          const orderUserId = orderData.userId || orderData.firebaseUid;
+
+          if (userIds.includes(orderUserId)) {
+            const createdAt = orderData.createdAt?.toDate?.() || null;
+            orders.push({
+              id: doc.id,
+              ...orderData,
+              createdAt,
+            });
+          }
+        });
+
+        setMemberOrders(orders);
+
+        // Group orders by period and calculate metrics
+        const groupedData = new Map<string, { amount: number; orders: number }>();
+
+        orders.forEach((order) => {
+          if (!order.createdAt) return;
+
+          const date = new Date(order.createdAt);
+          let key: string;
+
+          if (period === 'day') {
+            key = date.toISOString().split('T')[0]; // YYYY-MM-DD
+          } else if (period === 'month') {
+            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+          } else {
+            key = String(date.getFullYear()); // YYYY
+          }
+
+          const existing = groupedData.get(key) || { amount: 0, orders: 0 };
+          groupedData.set(key, {
+            amount: existing.amount + (order.totalAmount || 0),
+            orders: existing.orders + 1,
+          });
+        });
+
+        // Convert to PerformanceData array and sort by date descending
+        const performanceArray: PerformanceData[] = Array.from(groupedData.entries())
+          .map(([date, data]) => ({
+            date,
+            amount: data.amount,
+            commission: (data.amount * member.commissionRate) / 100,
+            orders: data.orders,
+          }))
+          .sort((a, b) => {
+            if (period === 'year') {
+              return parseInt(b.date) - parseInt(a.date);
+            }
+            return b.date.localeCompare(a.date);
+          });
+
+        setMemberPerformanceData(performanceArray);
+      } catch (error) {
+        console.error('Error fetching member performance data:', error);
+        setMemberPerformanceData([]);
+        setMemberOrders([]);
+      } finally {
+        setLoadingMemberPerformance(false);
+      }
+    },
+    [],
+  );
+
+  const handleViewMemberPerformance = async (member: TeamMember) => {
     setSelectedMember(member);
     setShowMemberPerformanceModal(true);
+    await fetchPerformanceData(member, memberPerformancePeriod);
   };
 
-  // Mock performance data for selected member
-  const getMemberPerformanceData = (period: 'day' | 'month' | 'year') => {
-    if (period === 'day') {
-      return [
-        { date: '2025-10-10', amount: 5000, commission: 250, orders: 3 },
-        { date: '2025-10-09', amount: 8000, commission: 400, orders: 5 },
-        { date: '2025-10-08', amount: 3000, commission: 150, orders: 2 },
-      ];
-    } else if (period === 'month') {
-      return [
-        { date: '2025-10', amount: 50000, commission: 2500, orders: 35 },
-        { date: '2025-09', amount: 45000, commission: 2250, orders: 30 },
-        { date: '2025-08', amount: 55000, commission: 2750, orders: 40 },
-      ];
-    } else {
-      return [
-        { date: '2025', amount: 150000, commission: 7500, orders: 105 },
-        { date: '2024', amount: 120000, commission: 6000, orders: 85 },
-      ];
+  useEffect(() => {
+    if (selectedMember && showMemberPerformanceModal) {
+      fetchPerformanceData(selectedMember, memberPerformancePeriod);
     }
-  };
+  }, [selectedMember, showMemberPerformanceModal, memberPerformancePeriod, fetchPerformanceData]);
 
-  const memberPerformanceData = getMemberPerformanceData(memberPerformancePeriod);
   const memberTotalEarnings = memberPerformanceData.reduce((sum, data) => sum + data.commission, 0);
   const memberTotalSales = memberPerformanceData.reduce((sum, data) => sum + data.amount, 0);
   const memberTotalOrders = memberPerformanceData.reduce((sum, data) => sum + data.orders, 0);
 
-  const handleViewPeriodTransactions = (data: any) => {
+  const handleViewPeriodTransactions = (data: PerformanceData) => {
     setSelectedPeriodData(data);
-    setShowMemberTransactions(true);
-  };
 
-  // Mock transaction data
-  const getTransactionsForPeriod = () => {
-    return [
-      { id: '1', date: '2025-10-10', customerName: '餐廳 A', amount: 2000, commission: 100, status: 'completed' },
-      { id: '2', date: '2025-10-10', customerName: '餐廳 B', amount: 1500, commission: 75, status: 'completed' },
-      { id: '3', date: '2025-10-10', customerName: '餐廳 C', amount: 1500, commission: 75, status: 'pending' },
-    ];
+    if (!selectedMember) {
+      setTransactionsForSelectedPeriod([]);
+      setShowMemberTransactions(true);
+      return;
+    }
+
+    const filteredOrders = memberOrders.filter((order) => {
+      if (!order.createdAt) return false;
+      const date = new Date(order.createdAt);
+      let key: string;
+
+      if (memberPerformancePeriod === 'day') {
+        key = date.toISOString().split('T')[0];
+      } else if (memberPerformancePeriod === 'month') {
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      } else {
+        key = String(date.getFullYear());
+      }
+
+      return key === data.date;
+    });
+
+    const transactions = filteredOrders.map((order: any) => ({
+      id: order.id,
+      date: order.createdAt,
+      customerName: order.restaurantName || order.userName || order.userEmail || '餐廳',
+      amount: order.totalAmount || 0,
+      commission: ((order.totalAmount || 0) * (selectedMember.commissionRate || 0)) / 100,
+      status: order.status || 'pending',
+    }));
+
+    setTransactionsForSelectedPeriod(transactions);
+    setShowMemberTransactions(true);
   };
 
   return (
@@ -391,56 +686,23 @@ export default function SalesTeamPage() {
             管理您的銷售團隊成員和業績
           </p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          建立團隊
-        </button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">團隊數量</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">{activeTeams}</p>
-              <p className="mt-1 text-sm text-gray-500">活躍團隊</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Users className="w-8 h-8 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">總銷售額</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">
-                {totalTeamSales > 0 ? formatCurrency(totalTeamSales) : 'HKD$ 0'}
-              </p>
-              <p className="mt-1 text-sm text-gray-500">所有團隊</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <Award className="w-8 h-8 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">團隊成員總數</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">{totalMembers}</p>
-              <p className="mt-1 text-sm text-gray-500">所有成員</p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <Users className="w-8 h-8 text-purple-600" />
-            </div>
-          </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button 
+            onClick={() => handleOpenMemberModal()}
+            className="inline-flex items-center px-4 py-2 text-white rounded-lg transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#2563EB' }}
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            新增銷售員
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center px-4 py-2 text-white rounded-lg transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#0B8628' }}
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            建立團隊
+          </button>
         </div>
       </div>
 
@@ -816,14 +1078,27 @@ export default function SalesTeamPage() {
                   <div className="flex items-center gap-2">
                     <Award className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-600">總銷售額:</span>
-                    <span className="text-sm text-gray-900">{formatCurrency(selectedTeam.totalSales)}</span>
+                    <span className="text-sm text-gray-900">
+                      {formatCurrency(selectedTeamTotalSales)}
+                    </span>
                   </div>
                 </div>
               </div>
 
               {/* Team Members */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">團隊成員</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900">團隊成員</h3>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenMemberModal(selectedTeam)}
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90"
+                    style={{ backgroundColor: '#2563EB' }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    新增銷售員
+                  </button>
+                </div>
                 {loadingMembers ? (
                   <div className="text-center py-8">
                     <p className="text-gray-500">載入中...</p>
@@ -844,9 +1119,6 @@ export default function SalesTeamPage() {
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             佣金率
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            總銷售額
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             狀態
@@ -882,9 +1154,6 @@ export default function SalesTeamPage() {
                               <div className="text-sm font-medium text-primary-600">{member.commissionRate}%</div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">HKD ${member.totalSales.toLocaleString()}</div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
                               <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                 member.status === 'active'
                                   ? 'bg-green-100 text-green-800'
@@ -906,6 +1175,201 @@ export default function SalesTeamPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Sales Member Modal (Admin) */}
+      {isMemberModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">新增銷售員</h2>
+              <button
+                onClick={handleCloseMemberModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateMember} className="p-6 space-y-4">
+              {/* Sales Team Selection */}
+              <div>
+                <label htmlFor="salesTeamId" className="block text-sm font-medium text-gray-700 mb-2">
+                  所屬銷售團隊 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="salesTeamId"
+                  required
+                  value={memberFormData.salesTeamId}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      salesTeamId: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">請選擇銷售團隊</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.firebaseUid || ''}>
+                      {team.teamName}（{team.teamLeader}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label htmlFor="memberName" className="block text-sm font-medium text-gray-700 mb-2">
+                  姓名 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="memberName"
+                  required
+                  value={memberFormData.name}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="請輸入姓名"
+                />
+              </div>
+
+              {/* Position */}
+              <div>
+                <label htmlFor="memberPosition" className="block text-sm font-medium text-gray-700 mb-2">
+                  職位 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="memberPosition"
+                  required
+                  value={memberFormData.position}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      position: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="例如：銷售專員、銷售經理"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label htmlFor="memberEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                  電子郵件 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  id="memberEmail"
+                  required
+                  value={memberFormData.email}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="example@company.com"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label htmlFor="memberPhone" className="block text-sm font-medium text-gray-700 mb-2">
+                  聯絡電話 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  id="memberPhone"
+                  required
+                  value={memberFormData.phone}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      phone: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="1234-5678"
+                />
+              </div>
+
+              {/* Commission Rate */}
+              <div>
+                <label htmlFor="memberCommissionRate" className="block text-sm font-medium text-gray-700 mb-2">
+                  佣金率 (%) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="memberCommissionRate"
+                  required
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={memberFormData.commissionRate}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      commissionRate: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="例如：5 或 10.5"
+                />
+                <p className="mt-1 text-xs text-gray-500">設定此銷售員的佣金百分比</p>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="memberPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                  登入密碼 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  id="memberPassword"
+                  required
+                  minLength={6}
+                  value={memberFormData.password}
+                  onChange={(e) =>
+                    setMemberFormData({
+                      ...memberFormData,
+                      password: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="至少6個字符"
+                />
+                <p className="mt-1 text-xs text-gray-500">此密碼用於銷售員登入系統</p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseMemberModal}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingMember}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreatingMember ? '處理中...' : '新增銷售員'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -937,31 +1401,34 @@ export default function SalesTeamPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setMemberPerformancePeriod('day')}
+                    disabled={loadingMemberPerformance}
                     className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
                       memberPerformancePeriod === 'day'
                         ? 'bg-primary-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100'
-                    }`}
+                    } ${loadingMemberPerformance ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     按日
                   </button>
                   <button
                     onClick={() => setMemberPerformancePeriod('month')}
+                    disabled={loadingMemberPerformance}
                     className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
                       memberPerformancePeriod === 'month'
                         ? 'bg-primary-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100'
-                    }`}
+                    } ${loadingMemberPerformance ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     按月
                   </button>
                   <button
                     onClick={() => setMemberPerformancePeriod('year')}
+                    disabled={loadingMemberPerformance}
                     className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
                       memberPerformancePeriod === 'year'
                         ? 'bg-primary-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100'
-                    }`}
+                    } ${loadingMemberPerformance ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     按年
                   </button>
@@ -1013,89 +1480,108 @@ export default function SalesTeamPage() {
 
               {/* Performance Table */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          期間
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          銷售額
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          佣金收入
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          訂單數量
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          平均訂單額
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {memberPerformanceData.map((data, index) => (
-                        <tr 
-                          key={index} 
-                          onClick={() => handleViewPeriodTransactions(data)}
-                          className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        >
+                {loadingMemberPerformance ? (
+                  <div className="p-12 text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-4"></div>
+                    <p className="text-gray-500">載入業績資料中...</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            期間
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            銷售額
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            佣金收入
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            訂單數量
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            平均訂單額
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {memberPerformanceData.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-12 text-center">
+                              <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                              <p className="text-gray-500">暫無業績資料</p>
+                              <p className="text-sm text-gray-400 mt-1">
+                                此銷售員目前沒有相關的訂單記錄
+                              </p>
+                            </td>
+                          </tr>
+                        ) : (
+                          memberPerformanceData.map((data, index) => (
+                            <tr 
+                              key={index} 
+                              onClick={() => handleViewPeriodTransactions(data)}
+                              className="hover:bg-gray-50 cursor-pointer transition-colors"
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4 text-gray-400" />
+                                  <span className="text-sm font-medium text-gray-900">{data.date}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">HKD ${data.amount.toLocaleString()}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-green-600">
+                                  HKD ${data.commission.toLocaleString()}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{data.orders}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-sm text-gray-900">
+                                    HKD ${data.orders > 0 ? (data.amount / data.orders).toLocaleString(undefined, { maximumFractionDigits: 0 }) : 0}
+                                  </div>
+                                  <Eye className="w-4 h-4 text-gray-400" />
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                      <tfoot className="bg-gray-50 border-t border-gray-200">
+                        <tr>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm font-medium text-gray-900">{data.date}</span>
+                            <div className="text-sm font-semibold text-gray-900">總計</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-gray-900">
+                              HKD ${memberTotalSales.toLocaleString()}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">HKD ${data.amount.toLocaleString()}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-green-600">
-                              HKD ${data.commission.toLocaleString()}
+                            <div className="text-sm font-semibold text-green-600">
+                              HKD ${memberTotalEarnings.toLocaleString()}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">{data.orders}</div>
+                            <div className="text-sm font-semibold text-gray-900">{memberTotalOrders}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center justify-between">
-                              <div className="text-sm text-gray-900">
-                                HKD ${(data.amount / data.orders).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                              </div>
-                              <Eye className="w-4 h-4 text-gray-400" />
+                            <div className="text-sm font-semibold text-gray-900">
+                              HKD ${memberTotalOrders > 0 ? (memberTotalSales / memberTotalOrders).toLocaleString(undefined, { maximumFractionDigits: 0 }) : 0}
                             </div>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t border-gray-200">
-                      <tr>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">總計</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">
-                            HKD ${memberTotalSales.toLocaleString()}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-green-600">
-                            HKD ${memberTotalEarnings.toLocaleString()}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">{memberTotalOrders}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">
-                            HKD ${memberTotalOrders > 0 ? (memberTotalSales / memberTotalOrders).toLocaleString(undefined, { maximumFractionDigits: 0 }) : 0}
-                          </div>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1171,35 +1657,48 @@ export default function SalesTeamPage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {getTransactionsForPeriod().map((transaction) => (
-                        <tr key={transaction.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {new Date(transaction.date).toLocaleDateString('zh-TW')}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{transaction.customerName}</div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">HKD ${transaction.amount.toLocaleString()}</div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="text-sm font-medium text-green-600">
-                              HKD ${transaction.commission.toLocaleString()}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              transaction.status === 'completed'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {transaction.status === 'completed' ? '已完成' : '處理中'}
-                            </span>
+                      {transactionsForSelectedPeriod.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                            暫無交易明細
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        transactionsForSelectedPeriod.map((transaction) => (
+                          <tr key={transaction.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {new Date(transaction.date).toLocaleDateString('zh-TW')}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{transaction.customerName}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">HKD ${transaction.amount.toLocaleString()}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-green-600">
+                                HKD ${transaction.commission.toLocaleString()}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {(() => {
+                                const status: string = transaction.status || 'pending';
+                                const statusClass = orderStatusColors[status] || 'bg-gray-100 text-gray-800';
+                                const statusLabel = orderStatusLabels[status] || status;
+                                return (
+                                  <span
+                                    className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusClass}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

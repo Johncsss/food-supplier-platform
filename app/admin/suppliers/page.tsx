@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Eye, 
@@ -16,12 +16,20 @@ import {
   X,
   Calendar,
   Package,
-  Trash2
+  Trash2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { Category, Product } from '@/shared/types';
 import { categories as defaultCategories } from '@/shared/products';
+import { addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isToday, format, getDay } from 'date-fns';
+import zhTW from 'date-fns/locale/zh-TW';
+import { fetchHongKongPublicHolidays } from '@/lib/hkPublicHolidays';
+import toast from 'react-hot-toast';
+import { ImageUploader } from '@/components/ui/ImageUploader';
+
 
 interface Supplier {
   id: string;
@@ -33,6 +41,8 @@ interface Supplier {
   joinDate: string;
   address: string;
   category?: string;
+  deliveryDays?: string[];
+  logo?: string;
 }
 
 export default function AdminSuppliers() {
@@ -45,11 +55,23 @@ export default function AdminSuppliers() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeliveryDatesModal, setShowDeliveryDatesModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierProducts, setSupplierProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productCountToDelete, setProductCountToDelete] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Delivery dates modal state
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [weeklyOffDays, setWeeklyOffDays] = useState<Set<number>>(new Set());
+  const [holidayOverrides, setHolidayOverrides] = useState<Set<string>>(new Set());
+  const [loadingDates, setLoadingDates] = useState(false);
+  const [savingDates, setSavingDates] = useState(false);
+  const [autoPublicHolidays, setAutoPublicHolidays] = useState(false);
+  const [holidaySets, setHolidaySets] = useState<Record<number, Set<string>>>({});
+  const [loadingHolidayYear, setLoadingHolidayYear] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
     companyName: '',
@@ -57,7 +79,8 @@ export default function AdminSuppliers() {
     phone: '',
     status: 'active' as 'active' | 'inactive' | 'pending',
     address: '',
-    category: ''
+    category: '',
+    logo: ''
   });
   const [addForm, setAddForm] = useState({
     name: '',
@@ -67,10 +90,12 @@ export default function AdminSuppliers() {
     phone: '',
     status: 'active' as 'active' | 'inactive' | 'pending',
     address: '',
-    category: ''
+    category: '',
+    logo: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
 
   // Fetch categories from Firestore
   useEffect(() => {
@@ -127,6 +152,8 @@ export default function AdminSuppliers() {
               address: typeof data.address === 'string' ? data.address : 
                        data.address ? `${data.address.street}, ${data.address.city}, ${data.address.state} ${data.address.zipCode}` : '',
               category: data.category || '',
+              deliveryDays: Array.isArray(data.deliveryDays) ? data.deliveryDays : [],
+              logo: data.logo || '',
             };
           });
         setSuppliers(fetchedSuppliers);
@@ -254,6 +281,206 @@ export default function AdminSuppliers() {
     }
   };
 
+  const handleManageDeliveryDates = async (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setShowDeliveryDatesModal(true);
+    setCurrentMonth(new Date());
+    await loadDeliveryDates(supplier.id);
+  };
+
+  const loadDeliveryDates = async (supplierId: string) => {
+    setLoadingDates(true);
+    try {
+      const response = await fetch(
+        `/api/supplier/delivery-settings?supplierId=${encodeURIComponent(supplierId)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || '無法載入供應商送貨設定');
+      }
+
+      const data = await response.json();
+      const list: string[] = Array.isArray(data?.offDates) ? data.offDates : [];
+      const weekly: number[] = Array.isArray(data?.weeklyOffDays) ? data.weeklyOffDays : [];
+      const autoHolidays = Boolean(data?.autoPublicHolidays);
+      const overrides: string[] = Array.isArray(data?.holidayOverrides) ? data.holidayOverrides : [];
+
+      setSelectedDates(new Set(list));
+      setWeeklyOffDays(new Set(weekly));
+      setAutoPublicHolidays(autoHolidays);
+      setHolidayOverrides(new Set(overrides));
+    } catch (e) {
+      console.error('Failed to load off dates', e);
+      toast.error(
+        e instanceof Error ? e.message : '無法載入供應商送貨設定，已套用預設值',
+      );
+      setSelectedDates(new Set());
+      setWeeklyOffDays(new Set());
+      setAutoPublicHolidays(false);
+      setHolidayOverrides(new Set());
+    } finally {
+      setLoadingDates(false);
+    }
+  };
+
+  const handleSaveDeliveryDates = async () => {
+    if (!selectedSupplier) return;
+    try {
+      setSavingDates(true);
+      const payload = {
+        supplierId: selectedSupplier.id,
+        offDates: Array.from(selectedDates),
+        weeklyOffDays: Array.from(weeklyOffDays),
+        autoPublicHolidays,
+        holidayOverrides: Array.from(holidayOverrides),
+      };
+      const response = await fetch('/api/supplier/delivery-settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || '儲存失敗，請稍後再試');
+      }
+
+      toast.success('已儲存休息日設定');
+      
+      // Update local supplier state
+      const updatedSuppliers = suppliers.map(supplier =>
+        supplier.id === selectedSupplier.id
+          ? {
+              ...supplier,
+              deliveryDays: Array.from(weeklyOffDays).map(d => {
+                const days = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+                return days[d];
+              })
+            }
+          : supplier
+      );
+      setSuppliers(updatedSuppliers);
+    } catch (e: any) {
+      console.error('Failed to save off dates', e);
+      toast.error(e?.message || '儲存失敗，請稍後再試');
+    } finally {
+      setSavingDates(false);
+    }
+  };
+
+  // Load holidays for current month
+  useEffect(() => {
+    if (!showDeliveryDatesModal) return;
+    
+    const year = currentMonth.getFullYear();
+    if (holidaySets[year]) return;
+
+    let active = true;
+    setLoadingHolidayYear(year);
+    fetchHongKongPublicHolidays(year)
+      .then((set) => {
+        if (!active) return;
+        setHolidaySets((prev) => ({
+          ...prev,
+          [year]: new Set(set),
+        }));
+      })
+      .catch((error) => {
+        console.error('Failed to ensure holiday data', error);
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingHolidayYear(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentMonth, holidaySets, showDeliveryDatesModal]);
+
+  const monthLabel = useMemo(() => format(currentMonth, 'yyyy年 MMMM', { locale: zhTW }), [currentMonth]);
+
+  const daysMatrix = useMemo(() => {
+    const startDate = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
+    const endDate = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+    const rows: Date[][] = [];
+    let row: Date[] = [];
+    let day = startDate;
+    while (day <= endDate) {
+      row.push(day);
+      if (row.length === 7) {
+        rows.push(row);
+        row = [];
+      }
+      day = addDays(day, 1);
+    }
+    if (row.length > 0) rows.push(row);
+    return rows;
+  }, [currentMonth]);
+
+  const toggleDate = (d: Date) => {
+    if (!isSameMonth(d, currentMonth)) return;
+    const key = format(d, 'yyyy-MM-dd');
+    const year = currentMonth.getFullYear();
+    const publicHolidaySet = holidaySets[year] ? new Set(holidaySets[year]) : new Set<string>();
+    const isBaseHoliday = autoPublicHolidays && publicHolidaySet.has(key);
+    if (isBaseHoliday) {
+      setHolidayOverrides((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+        return next;
+      });
+      return;
+    }
+    setSelectedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleWeeklyOffDay = (weekday: number) => {
+    setWeeklyOffDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(weekday)) {
+        next.delete(weekday);
+      } else {
+        next.add(weekday);
+      }
+      return next;
+    });
+  };
+
+  const weekdayOptions = [
+    { label: '週一', value: 1 },
+    { label: '週二', value: 2 },
+    { label: '週三', value: 3 },
+    { label: '週四', value: 4 },
+    { label: '週五', value: 5 },
+    { label: '週六', value: 6 },
+    { label: '週日', value: 0 },
+  ];
+
+  const publicHolidaySet = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    return holidaySets[year] ? new Set(holidaySets[year]) : new Set<string>();
+  }, [currentMonth, holidaySets]);
+
   const confirmDeleteSupplier = async () => {
     if (!selectedSupplier) return;
 
@@ -297,54 +524,78 @@ export default function AdminSuppliers() {
       phone: supplier.phone,
       status: supplier.status,
       address: supplier.address,
-      category: supplier.category || ''
+      category: supplier.category || '',
+      logo: supplier.logo || ''
     });
     setShowEditModal(true);
   };
 
   const handleSaveEdit = async () => {
-    if (selectedSupplier && editForm.name && editForm.companyName && editForm.email && editForm.phone && editForm.address) {
-      try {
-        setIsSubmitting(true);
-        setError(null);
+    if (!selectedSupplier) {
+      setError('未選擇供應商');
+      return;
+    }
 
-        // Update in Firestore
-        const supplierRef = doc(db, 'users', selectedSupplier.id);
-        await updateDoc(supplierRef, {
+    // Validate required fields
+    if (!editForm.name || !editForm.companyName || !editForm.email || !editForm.phone) {
+      setError('請填寫所有必填欄位（姓名、公司名稱、電子郵件、電話）');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      // Call API endpoint to update supplier using Admin SDK
+      const response = await fetch('/api/update-supplier', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          supplierId: selectedSupplier.id,
           name: editForm.name,
           companyName: editForm.companyName,
           email: editForm.email,
           phone: editForm.phone,
           status: editForm.status,
-          address: editForm.address,
+          address: editForm.address || '',
           category: editForm.category || '',
-          updatedAt: serverTimestamp()
-        });
+          logo: editForm.logo || '',
+        }),
+      });
 
-        // Update local state
-        const updatedSuppliers = suppliers.map(supplier =>
-          supplier.id === selectedSupplier.id
-            ? {
-                ...supplier,
-                name: editForm.name,
-                companyName: editForm.companyName,
-                email: editForm.email,
-                phone: editForm.phone,
-                status: editForm.status,
-                address: editForm.address,
-                category: editForm.category || ''
-              }
-            : supplier
-        );
-        setSuppliers(updatedSuppliers);
-        setShowEditModal(false);
-        setSelectedSupplier(null);
-      } catch (error: any) {
-        console.error('Error updating supplier:', error);
-        setError(error.message || '更新供應商失敗');
-      } finally {
-        setIsSubmitting(false);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || '更新供應商失敗');
       }
+
+      // Update local state
+      const updatedSuppliers = suppliers.map(supplier =>
+        supplier.id === selectedSupplier.id
+          ? {
+              ...supplier,
+              name: editForm.name,
+              companyName: editForm.companyName,
+              email: editForm.email,
+              phone: editForm.phone,
+              status: editForm.status,
+              address: editForm.address || '',
+              category: editForm.category || '',
+              logo: editForm.logo || ''
+            }
+          : supplier
+      );
+      setSuppliers(updatedSuppliers);
+      setShowEditModal(false);
+      setSelectedSupplier(null);
+      alert('供應商資料已成功更新！');
+    } catch (error: any) {
+      console.error('Error updating supplier:', error);
+      setError(error.message || '更新供應商失敗');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -373,6 +624,7 @@ export default function AdminSuppliers() {
           status: addForm.status,
           address: addForm.address,
           category: addForm.category || '',
+          logo: addForm.logo || '',
         }),
       });
 
@@ -392,7 +644,9 @@ export default function AdminSuppliers() {
         status: result.supplier.status,
         joinDate: new Date().toISOString().split('T')[0],
         address: result.supplier.address,
-        category: result.supplier.category || ''
+        category: result.supplier.category || '',
+        deliveryDays: result.supplier.deliveryDays || [],
+        logo: result.supplier.logo || ''
       };
 
       setSuppliers([supplierForDisplay, ...suppliers]);
@@ -407,7 +661,8 @@ export default function AdminSuppliers() {
         phone: '',
         status: 'active',
         address: '',
-        category: ''
+        category: '',
+        logo: ''
       });
     } catch (error: any) {
       console.error('Error adding supplier:', error);
@@ -440,29 +695,13 @@ export default function AdminSuppliers() {
           <div className="flex space-x-3">
             <button 
               onClick={() => setShowAddModal(true)}
-              className="btn-primary"
+            className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
+            style={{ backgroundColor: '#0B8628' }}
             >
               <UserPlus className="w-4 h-4 mr-2" />
               新增供應商
+            <span className="ml-2 text-xs font-normal text-primary-100">建立供應商</span>
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="flex justify-start">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 w-full md:w-96">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-blue-100">
-                <Store className="w-10 h-10 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">總供應商數</p>
-                <p className="text-3xl font-bold text-gray-900">{totalSuppliers}</p>
-                <p className="text-sm text-gray-500">活躍: {activeSuppliers}</p>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -523,7 +762,22 @@ export default function AdminSuppliers() {
                 <tr key={supplier.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 rounded-lg bg-gray-100">
+                      {supplier.logo ? (
+                        <img 
+                          src={supplier.logo} 
+                          alt={supplier.companyName}
+                          className="w-10 h-10 rounded-lg object-cover border border-gray-200"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = 'none';
+                            const fallback = target.nextElementSibling as HTMLElement;
+                            if (fallback) {
+                              fallback.style.display = 'flex';
+                            }
+                          }}
+                        />
+                      ) : null}
+                      <div className={`p-2 rounded-lg bg-gray-100 ${supplier.logo ? 'hidden' : 'flex items-center justify-center'}`}>
                         <Store className="w-5 h-5 text-gray-600" />
                       </div>
                       <div>
@@ -573,6 +827,13 @@ export default function AdminSuppliers() {
                         title="查看產品"
                       >
                         <Package className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleManageDeliveryDates(supplier)}
+                        className="text-purple-600 hover:text-purple-900 p-1 rounded hover:bg-purple-50 transition-colors"
+                        title="送貨日期管理"
+                      >
+                        <Calendar className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={() => handleEditSupplier(supplier)}
@@ -656,9 +917,27 @@ export default function AdminSuppliers() {
                       <p className="text-sm text-gray-900">{selectedSupplier.category || '未設定'}</p>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700">送貨日子</label>
+                      {selectedSupplier.deliveryDays && selectedSupplier.deliveryDays.length > 0 ? (
+                        <p className="text-sm text-gray-900">{selectedSupplier.deliveryDays.join('、')}</p>
+                      ) : (
+                        <p className="text-sm text-gray-500">未設定</p>
+                      )}
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700">加入日期</label>
                       <p className="text-sm text-gray-900">{selectedSupplier.joinDate}</p>
                     </div>
+                    {selectedSupplier.logo && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Logo</label>
+                        <img 
+                          src={selectedSupplier.logo} 
+                          alt={selectedSupplier.companyName}
+                          className="w-32 h-32 rounded-lg object-cover border border-gray-200"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -807,6 +1086,18 @@ export default function AdminSuppliers() {
                     placeholder="請輸入完整地址"
                   />
                 </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">供應商 Logo</label>
+                  <ImageUploader
+                    value={addForm.logo}
+                    onChange={(url) => setAddForm({...addForm, logo: url})}
+                    onError={(error) => {
+                      toast.error(error);
+                    }}
+                    folder="supplier_logo"
+                  />
+                </div>
               </div>
               
               <div className="mt-6 flex justify-end space-x-3">
@@ -823,7 +1114,8 @@ export default function AdminSuppliers() {
                 <button
                   onClick={handleAddSupplier}
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: '#0B8628' }}
                 >
                   {isSubmitting ? '新增中...' : '新增供應商'}
                 </button>
@@ -932,6 +1224,18 @@ export default function AdminSuppliers() {
                     onChange={(e) => setEditForm({...editForm, address: e.target.value})}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">供應商 Logo</label>
+                  <ImageUploader
+                    value={editForm.logo}
+                    onChange={(url) => setEditForm({...editForm, logo: url})}
+                    onError={(error) => {
+                      toast.error(error);
+                    }}
+                    folder="supplier_logo"
                   />
                 </div>
               </div>
@@ -1099,6 +1403,180 @@ export default function AdminSuppliers() {
                   關閉
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Dates Management Modal */}
+      {showDeliveryDatesModal && selectedSupplier && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-10 mx-auto p-5 border w-11/12 max-w-5xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-semibold text-gray-900">送貨日期管理</h3>
+                  <p className="text-sm text-gray-600 mt-1">供應商：{selectedSupplier.companyName} ({selectedSupplier.name})</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDeliveryDatesModal(false);
+                    setSelectedSupplier(null);
+                    setSelectedDates(new Set());
+                    setWeeklyOffDays(new Set());
+                    setHolidayOverrides(new Set());
+                    setAutoPublicHolidays(false);
+                    setCurrentMonth(new Date());
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {loadingDates ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">載入送貨設定中...</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      className="p-2 rounded-lg hover:bg-gray-100"
+                      onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
+                    >
+                      <ChevronLeft className="w-5 h-5 text-gray-600" />
+                    </button>
+                    <div className="text-lg font-semibold text-gray-900">{monthLabel}</div>
+                    <button
+                      className="p-2 rounded-lg hover:bg-gray-100"
+                      onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+                    >
+                      <ChevronRight className="w-5 h-5 text-gray-600" />
+                    </button>
+                  </div>
+
+                  {/* Public Holiday Toggle */}
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">香港公眾假期自動休息</p>
+                      <p className="text-xs text-gray-500">開啟後，系統會自動標記當月份的香港公眾假期為休息日。</p>
+                    </div>
+                    <button
+                      onClick={() => setAutoPublicHolidays((prev) => !prev)}
+                      className={[
+                        'px-4 py-2 rounded-full text-sm font-medium border transition-colors',
+                        autoPublicHolidays
+                          ? 'bg-red-500 border-red-500 text-white hover:bg-red-600'
+                          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100',
+                      ].join(' ')}
+                    >
+                      {autoPublicHolidays ? '已開啟' : '未開啟'}
+                    </button>
+                  </div>
+
+                  {/* Weekly Off Controls */}
+                  <div className="mb-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">每週固定休息日</p>
+                    <div className="flex flex-wrap gap-2">
+                      {weekdayOptions.map(({ label, value }) => {
+                        const active = weeklyOffDays.has(value);
+                        return (
+                          <button
+                            key={value}
+                            onClick={() => toggleWeeklyOffDay(value)}
+                            className={[
+                              'px-3 py-2 rounded-lg text-sm border transition-colors',
+                              active
+                                ? 'bg-red-500 border-red-500 text-white hover:bg-red-600'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100',
+                            ].join(' ')}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm text-gray-600">
+                      點擊當月日期以切換<span className="font-medium text-red-600">休息日</span>，或透過上方按鈕設定每週固定休息日；
+                      <br />
+                      標記「假」的公眾假期也可以點擊解除休息
+                    </p>
+                    <button
+                      className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 text-sm disabled:opacity-60"
+                      onClick={handleSaveDeliveryDates}
+                      disabled={savingDates || loadingDates}
+                    >
+                      {savingDates ? '儲存中...' : '儲存更改'}
+                    </button>
+                  </div>
+
+                  {/* Weekday Labels */}
+                  <div className="grid grid-cols-7 gap-2 text-xs text-gray-500 mb-2">
+                    {['一','二','三','四','五','六','日'].map((d) => (
+                      <div key={d} className="text-center">{d}</div>
+                    ))}
+                  </div>
+
+                  {/* Days Grid */}
+                  <div className="grid grid-cols-7 gap-2">
+                    {daysMatrix.flat().map((d, idx) => {
+                      const inMonth = isSameMonth(d, currentMonth);
+                      const key = format(d, 'yyyy-MM-dd');
+                      const selected = selectedDates.has(key);
+                      const weeklyOff = weeklyOffDays.has(getDay(d));
+                      const baseHoliday = autoPublicHolidays && publicHolidaySet.has(key);
+                      const holidayBlocked = baseHoliday && !holidayOverrides.has(key);
+                      const isOff = inMonth && (selected || weeklyOff || holidayBlocked);
+                      const today = isToday(d);
+                      return (
+                        <button
+                          key={`${key}-${idx}`}
+                          className={[
+                            'relative h-10 rounded-lg border text-sm',
+                            inMonth ? 'bg-white hover:bg-gray-50 border-gray-200' : 'bg-gray-50 border-gray-100 text-gray-400',
+                            isOff ? 'ring-2 ring-red-500 bg-red-50' : '',
+                            today ? 'border-primary-300' : '',
+                          ].join(' ')}
+                          onClick={() => toggleDate(d)}
+                          disabled={!inMonth}
+                        >
+                          <span className="block text-center leading-9 font-medium">
+                            {format(d, 'd')}
+                          </span>
+                          {holidayBlocked && (
+                            <span className="absolute top-1 right-1 text-base font-semibold text-red-500">
+                              假
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-4 h-4 rounded border border-red-300 bg-red-50"></span>
+                      <span>休息日</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-red-400 text-[9px] text-red-500">假</span>
+                      <span>公眾假期</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-4 h-4 rounded border border-gray-200"></span>
+                      <span>非選取日期</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

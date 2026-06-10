@@ -40,11 +40,11 @@ export const generateInvoicePDF = async (invoiceData: InvoiceData): Promise<void
   // Generate HTML content with Chinese characters
   invoiceElement.innerHTML = `
     <div style="margin-bottom: 30px;">
-      <h1 style="font-size: 28px; color: #333; margin: 0 0 10px 0;">雲臺</h1>
-      <p style="font-size: 16px; color: #666; margin: 0;">高質食品供應商</p>
+      <h1 style="font-size: 28px; color: #333; margin: 0 0 10px 0;">iFood Pulse</h1>
+      <p style="font-size: 16px; color: #666; margin: 0;">全方位餐飲供應鏈平台</p>
       <p style="font-size: 14px; color: #666; margin: 5px 0;">香港九龍彌敦道700號</p>
       <p style="font-size: 14px; color: #666; margin: 5px 0;">電話: (852) 9890-9890</p>
-      <p style="font-size: 14px; color: #666; margin: 5px 0;">電郵: info@foodsupplierpro.com</p>
+      <p style="font-size: 14px; color: #666; margin: 5px 0;">電郵: info@ifoodpulse.com</p>
     </div>
     
     <div style="margin-bottom: 30px;">

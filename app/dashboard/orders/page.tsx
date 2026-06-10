@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Package, Calendar, DollarSign, MapPin, Clock, CheckCircle, Truck, Download, Search, AlertTriangle } from 'lucide-react';
+import { Package, Calendar, DollarSign, MapPin, Clock, CheckCircle, Truck, Download, Search, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import ComplaintModal from '@/components/ui/ComplaintModal';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { generateInvoicePDF, InvoiceData } from '@/lib/pdf-generator';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import toast from 'react-hot-toast';
 
 interface OrderItem {
   productId: string;
@@ -16,6 +17,7 @@ interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   imageUrl: string;
+  unit?: string;
 }
 
 interface Order {
@@ -23,15 +25,16 @@ interface Order {
   userId: string;
   firebaseUid?: string;
   userEmail?: string;
+  restaurantName?: string;
   items: OrderItem[];
   totalAmount: number;
   status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   deliveryDate: Date;
-  deliveryAddress: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
+  deliveryAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
   };
   notes?: string;
   source?: string;
@@ -84,6 +87,9 @@ export default function UserOrders() {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [complaintModalOpen, setComplaintModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [supplierNames, setSupplierNames] = useState<Record<string, string>>({});
+  const [supplierLogos, setSupplierLogos] = useState<Record<string, string>>({});
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   // Authentication protection
   useEffect(() => {
@@ -92,6 +98,67 @@ export default function UserOrders() {
       router.push('/login');
     }
   }, [firebaseUser, authLoading, router]);
+
+  // Fetch supplier display data (name + logo) by supplier identifier.
+  // Note: supplier identifier may be supplier doc id OR companyName.
+  const fetchSupplierMeta = useCallback(async (supplierRefs: string[]) => {
+    if (supplierRefs.length === 0) return { nameMap: {}, logoMap: {} };
+    
+    try {
+      const uniqueIds = Array.from(new Set(supplierRefs.filter(id => id)));
+      if (uniqueIds.length === 0) return { nameMap: {}, logoMap: {} };
+      
+      const nameMap: Record<string, string> = {};
+      const logoMap: Record<string, string> = {};
+      
+      // Fetch each supplier individually (since we might have company names instead of IDs)
+      for (const supplierId of uniqueIds) {
+        try {
+          // First try to get by document ID
+          const supplierDoc = await getDoc(doc(db, 'users', supplierId));
+          if (supplierDoc.exists()) {
+            const data = supplierDoc.data();
+            if (data.companyName) {
+              nameMap[supplierId] = data.companyName;
+              if ((data as any).logo) {
+                logoMap[supplierId] = (data as any).logo;
+              }
+              continue;
+            }
+          }
+          
+          // If not found by ID, try searching by companyName
+          const usersQuery = query(
+            collection(db, 'users'),
+            where('role', '==', 'supplier'),
+            where('companyName', '==', supplierId)
+          );
+          const snapshot = await getDocs(usersQuery);
+          if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            if (data.companyName) {
+              nameMap[supplierId] = data.companyName;
+              if ((data as any).logo) {
+                logoMap[supplierId] = (data as any).logo;
+              }
+            }
+          } else {
+            // If still not found, use the supplierId as the name
+            nameMap[supplierId] = supplierId;
+          }
+        } catch (error) {
+          console.error(`Error fetching supplier ${supplierId}:`, error);
+          // Fallback to using the supplierId as the name
+          nameMap[supplierId] = supplierId;
+        }
+      }
+      
+      return { nameMap, logoMap };
+    } catch (error) {
+      console.error('Error fetching supplier names from Firestore:', error);
+      return { nameMap: {}, logoMap: {} };
+    }
+  }, []);
 
   const fetchOrders = useCallback(async (showLoading = true) => {
     console.log('fetchOrders called, showLoading:', showLoading);
@@ -201,6 +268,17 @@ export default function UserOrders() {
       setOrders(fetchedOrders);
       setFilteredOrders(fetchedOrders);
       setLastUpdate(new Date());
+
+      // Fetch supplier names for all orders
+      const supplierIds = fetchedOrders
+        .map(order => (order as any).supplierCompanyName || (order as any).supplierName || order.supplier || order.supplierId)
+        .filter(Boolean);
+      
+      if (supplierIds.length > 0) {
+        const meta = await fetchSupplierMeta(supplierIds);
+        setSupplierNames(meta.nameMap);
+        setSupplierLogos(meta.logoMap);
+      }
     } catch (error) {
       console.error('Error fetching orders:', error);
       // Show empty orders on error
@@ -211,7 +289,7 @@ export default function UserOrders() {
       setLoading(false);
       setIsUpdating(false);
     }
-  }, [firebaseUser, user, authLoading]);
+  }, [firebaseUser, user, authLoading, fetchSupplierMeta]);
 
   useEffect(() => {
     fetchOrders(true);
@@ -238,6 +316,13 @@ export default function UserOrders() {
 
     setDownloadingInvoice(order.id);
     try {
+      const resolvedAddress = getResolvedAddress(order);
+      const normalizedAddress = {
+        street: resolvedAddress?.street || '',
+        city: resolvedAddress?.city || '',
+        state: resolvedAddress?.state || '',
+        zipCode: resolvedAddress?.zipCode || '',
+      };
       const invoiceData: InvoiceData = {
         orderId: order.id,
         orderDate: order.createdAt,
@@ -252,7 +337,7 @@ export default function UserOrders() {
         subtotal: order.totalAmount,
         tax: 0,
         total: order.totalAmount,
-        deliveryAddress: order.deliveryAddress
+        deliveryAddress: normalizedAddress
       };
 
       await generateInvoicePDF(invoiceData);
@@ -272,9 +357,23 @@ export default function UserOrders() {
     if (!selectedOrder || !user) return;
 
     try {
-      // Fetch supplier name from the order
-      const supplierName = (selectedOrder as any).supplier || selectedOrder.supplierId || '';
-      
+      const supplierIdentifier =
+        (selectedOrder as any).supplierId ||
+        (selectedOrder as any).supplier ||
+        (selectedOrder.items.find((item) => (item as any).supplierId || (item as any).supplier) as any)?.supplierId ||
+        (selectedOrder.items.find((item) => (item as any).supplier) as any)?.supplier ||
+        '';
+
+      if (!supplierIdentifier) {
+        throw new Error('無法判定供應商資訊，請聯絡客服協助');
+      }
+
+      const supplierCompanyName =
+        (selectedOrder as any).supplierCompanyName ||
+        (selectedOrder as any).supplierName ||
+        selectedOrder.restaurantName ||
+        supplierIdentifier;
+
       const response = await fetch('/api/create-complaint', {
         method: 'POST',
         headers: {
@@ -286,19 +385,22 @@ export default function UserOrders() {
           userId: user.id,
           userEmail: user.email,
           restaurantName: user.restaurantName || '',
-          supplierId: supplierName, // Use supplier name as ID (since that's what's stored)
-          supplierCompanyName: supplierName
+          supplierId: supplierIdentifier,
+          supplierCompanyName,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to submit complaint');
+        const data = await response.json().catch(() => ({ error: '提交失敗' }));
+        throw new Error(data.error || '提交失敗');
       }
 
       setComplaintModalOpen(false);
       setSelectedOrder(null);
-    } catch (error) {
+      toast.success('訊息已送出');
+    } catch (error: any) {
       console.error('Error submitting complaint:', error);
+      toast.error(error?.message || '提交時發生錯誤');
       throw error;
     }
   };
@@ -318,6 +420,16 @@ export default function UserOrders() {
     return `${month} ${day}, ${year} at ${displayHours}:${minutes} ${ampm}`;
   };
 
+const formatDeliveryDate = (date: Date) => {
+  const d = new Date(date);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  const weekdayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  const weekday = weekdayNames[d.getDay()];
+  return `${month}-${day}-${year}, ${weekday}`;
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -331,6 +443,29 @@ export default function UserOrders() {
   };
 
   const totalAmount = filteredOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+
+  const getResolvedAddress = useCallback(
+    (order: Order) => {
+      const orderAddress = order.deliveryAddress || {};
+      const hasOrderAddress = orderAddress && Object.values(orderAddress).some(Boolean);
+      if (hasOrderAddress) {
+        return orderAddress;
+      }
+      const userAddress = user?.address || {};
+      const hasUserAddress = userAddress && Object.values(userAddress).some(Boolean);
+      return hasUserAddress ? userAddress : null;
+    },
+    [user?.address]
+  );
+
+  const formatAddress = useCallback((address: any | null) => {
+    if (!address) return '未填寫';
+    const lines = [];
+    if (address.street) lines.push(address.street);
+    const cityLine = [address.city, address.state, address.zipCode].filter(Boolean).join(' ');
+    if (cityLine) lines.push(cityLine);
+    return lines.length > 0 ? lines.join('\n') : '未填寫';
+  }, []);
 
   // Show loading state while checking authentication
   if (authLoading) {
@@ -404,7 +539,8 @@ export default function UserOrders() {
               <button
                 onClick={() => fetchOrders(true)}
                 disabled={isUpdating}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-4 py-2 text-white rounded-lg flex items-center space-x-2 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#0B8628' }}
               >
                 {isUpdating ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -439,96 +575,159 @@ export default function UserOrders() {
           </div>
         ) : (
           <div className="space-y-6">
-            {filteredOrders.map((order) => (
-              <div key={order.id} className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="p-6">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4">
-                    <div className="flex items-center space-x-4 mb-4 lg:mb-0">
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(order.status)}
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[order.status]}`}>
-                          {statusLabels[order.status]}
-                        </span>
+            {filteredOrders.map((order) => {
+              const isExpanded = expandedOrderId === order.id;
+              return (
+                <div key={order.id} className="bg-white rounded-lg shadow overflow-hidden">
+                  <div className="p-6">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4">
+                      <div className="flex items-center space-x-4 mb-4 lg:mb-0">
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(order.status)}
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[order.status]}`}>
+                            {statusLabels[order.status]}
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">訂單 #{order.id}</h3>
+                          <p className="text-sm text-gray-600">下單時間：{formatDate(order.createdAt)}</p>
+                          {(() => {
+                            const supplierId = (order as any).supplierCompanyName || (order as any).supplierName || order.supplier || order.supplierId;
+                            const supplierName = supplierId ? (supplierNames[supplierId] || supplierId) : null;
+                            return supplierName ? (
+                              <p className="text-sm text-gray-600 mt-1">
+                                <span className="inline-flex items-center gap-2">
+                                  {supplierId && supplierLogos[supplierId] ? (
+                                    <img
+                                      src={supplierLogos[supplierId]}
+                                      alt="Supplier logo"
+                                      className="w-20 h-20 rounded-full object-cover border border-gray-200 bg-white"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <span className="w-20 h-20 rounded-full bg-gray-200 border border-gray-200 inline-block" />
+                                  )}
+                                  <span>{supplierName}</span>
+                                </span>
+                              </p>
+                            ) : null;
+                          })()}
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">訂單 #{order.id}</h3>
-                        <p className="text-sm text-gray-600">下單時間：{formatDate(order.createdAt)}</p>
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-gray-900">{formatCurrency(order.totalAmount)}</p>
+                          <p className="text-sm text-gray-600">{order.items.length} 項商品</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleComplaintClick(order)}
+                            className="px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 flex items-center space-x-2"
+                          >
+                            <AlertTriangle className="w-4 h-4" />
+                            <span>聯絡供應商</span>
+                          </button>
+                          <button
+                            onClick={() => handleDownloadInvoice(order)}
+                            disabled={downloadingInvoice === order.id}
+                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                          >
+                            {downloadingInvoice === order.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                            <span>收據</span>
+                          </button>
+                          <button
+                            onClick={() =>
+                              setExpandedOrderId((current) => (current === order.id ? null : order.id))
+                            }
+                            className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-1"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronUp className="w-4 h-4" />
+                                <span className="text-sm">收合</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-4 h-4" />
+                                <span className="text-sm">查看詳情</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <p className="text-lg font-semibold text-gray-900">{formatCurrency(order.totalAmount)}</p>
-                        <p className="text-sm text-gray-600">{order.items.length} 項商品</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleComplaintClick(order)}
-                          className="px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 flex items-center space-x-2"
-                        >
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>投訴</span>
-                        </button>
-                        <button
-                          onClick={() => handleDownloadInvoice(order)}
-                          disabled={downloadingInvoice === order.id}
-                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                        >
-                          {downloadingInvoice === order.id ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                          ) : (
-                            <Download className="w-4 h-4" />
-                          )}
-                          <span>發票</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Order Items */}
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">商品清單</h4>
-                    <div className="space-y-2">
-                      {order.items.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                              <Package className="w-5 h-5 text-gray-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">{item.productName}</p>
-                              <p className="text-xs text-gray-600">數量：{item.quantity}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-gray-900">{formatCurrency(item.totalPrice)}</p>
-                            <p className="text-xs text-gray-600">單價：{formatCurrency(item.unitPrice)}</p>
+                    {isExpanded && (
+                      <>
+                        {/* Order Items */}
+                        <div className="mb-4">
+                          <h4 className="text-sm font-medium text-gray-900 mb-2">商品清單</h4>
+                          <div className="space-y-2">
+                            {order.items.map((item, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                                    <Package className="w-5 h-5 text-gray-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900">{item.productName}</p>
+                                    <p className="text-xs text-gray-600">
+                                      數量：{item.quantity} / {item.unit || '單位'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {formatCurrency(item.totalPrice)}
+                                  </p>
+                                  <p className="text-xs text-gray-600">
+                                    單價：{formatCurrency(item.unitPrice)}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* Delivery Information */}
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center">
-                      <MapPin className="w-4 h-4 mr-2" />
-                      送貨地址
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      {order.deliveryAddress.street}<br />
-                      {order.deliveryAddress.city}, {order.deliveryAddress.state} {order.deliveryAddress.zipCode}
-                    </p>
-                  </div>
+                        {/* Delivery Information */}
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center">
+                            <MapPin className="w-4 h-4 mr-2" />
+                            送貨地址
+                          </h4>
+                          <p className="text-sm text-gray-600 whitespace-pre-line">
+                            {formatAddress(getResolvedAddress(order))}
+                          </p>
+                          <div className="mt-3 flex items-center text-sm text-gray-600">
+                            <Calendar className="w-4 h-4 mr-2" />
+                            <span>
+                              送貨日期：
+                              {order.deliveryDate
+                                ? formatDeliveryDate(new Date(order.deliveryDate as any))
+                                : '未指定'}
+                            </span>
+                          </div>
+                        </div>
 
-                  {order.notes && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium text-gray-900 mb-2">備註</h4>
-                      <p className="text-sm text-gray-600">{order.notes}</p>
-                    </div>
-                  )}
+                        {order.notes && (
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-900 mb-2">備註</h4>
+                            <p className="text-sm text-gray-600">{order.notes}</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

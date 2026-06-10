@@ -12,6 +12,8 @@ export interface User {
     state: string;
     zipCode: string;
   };
+  profileImageUrl?: string;
+  profileBackgroundUrl?: string;
   membershipStatus: 'active' | 'inactive' | 'expired';
   membershipExpiry: Date | null;
   stripeCustomerId?: string;
@@ -37,6 +39,7 @@ export interface Product {
   imageUrl: string;
   imageUrls?: string[]; // Multiple images array
   isAvailable: boolean;
+  showOnHomepage?: boolean;
   supplier: string;
   createdAt: Date;
   updatedAt: Date;

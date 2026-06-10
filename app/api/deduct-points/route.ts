@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use Admin SDK to perform atomic update and write regardless of client security rules
+    const transactionId = `${userId}_${Date.now()}`;
     await adminDb.runTransaction(async (t) => {
       const uRef = adminDb.collection('users').doc(userRef.id);
       const uSnap = await t.get(uRef);
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       });
 
-      const txRef = adminDb.collection('point_transactions').doc(`${userId}_${Date.now()}`);
+      const txRef = adminDb.collection('point_transactions').doc(transactionId);
       t.set(txRef, {
         userId,
         pointsDeducted: amount,
@@ -99,7 +100,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `Successfully deducted ${amount} points`,
-      newBalance: currentPoints - amount
+      newBalance: currentPoints - amount,
+      transactionId
     });
 
   } catch (error: any) {

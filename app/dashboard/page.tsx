@@ -7,7 +7,7 @@ import { Package, CheckCircle, Coins } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Dashboard() {
-  const { user, firebaseUser, loading } = useAuth();
+  const { user, firebaseUser, loading, isAdmin } = useAuth();
   const router = useRouter();
   // Removed demo points overlay for real balance consistency
 
@@ -16,6 +16,12 @@ export default function Dashboard() {
       router.push('/login');
     }
   }, [firebaseUser, loading, router]);
+
+  useEffect(() => {
+    if (!loading && isAdmin) {
+      router.replace('/admin/welcome');
+    }
+  }, [loading, isAdmin, router]);
 
   if (loading) {
     return (
@@ -28,7 +34,7 @@ export default function Dashboard() {
     );
   }
 
-  if (!firebaseUser) {
+  if (!firebaseUser || isAdmin) {
     return null;
   }
 

@@ -84,7 +84,7 @@ export default function SalesTeamDashboard() {
             <Award className="w-12 h-12" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold mb-2">歡迎來到銷售團隊管理面板</h2>
+            <h2 className="text-2xl font-bold mb-2">歡迎來到銷售團隊管理系統</h2>
             <p className="text-blue-100">
               在這裡您可以管理團隊成員、追蹤訂單、查看業績統計等。
             </p>

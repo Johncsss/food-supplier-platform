@@ -1,6 +1,6 @@
 export const translations = {
   // Header
-  'FoodSupplier Pro': '高質食品供應商',
+  'iFoodPulse': '全方位餐飲供應鏈平台',
   'Products': '產品',
   'Pricing': '價格',
   'About': '關於',
@@ -16,7 +16,7 @@ export const translations = {
 
   // Login Page
   'Welcome Back': '歡迎回來',
-  'Sign in to your FoodSupplier Pro account': '登入您的高質食品供應商帳戶',
+  'Sign in to your iFoodPulse account': '登入您的高質食品供應商帳戶',
   'Email Address': '電子郵件地址',
   'Password': '密碼',
   'Forgot your password?': '忘記密碼？',
@@ -29,7 +29,7 @@ export const translations = {
 
   // Register Page
   'Create Your Restaurant Account': '創建您的餐廳帳戶',
-  'Join FoodSupplier Pro and get access to premium food supply services.': '加入高質食品供應商，獲得優質食品供應服務。',
+  'Join iFoodPulse and get access to premium food supply services.': '加入高質食品供應商，獲得優質食品供應服務。',
   'Full Name': '全名',
   'Restaurant Name': '餐廳名稱',
   'Phone Number': '電話號碼',
@@ -54,7 +54,7 @@ export const translations = {
   'Password must be at least 8 characters': '密碼至少需要8個字符',
 
   // Admin Page
-  'Here\'s what\'s happening with your FoodSupplier Pro platform today.': '以下是您的高質食品供應商平台今天的狀況。',
+  'Here\'s what\'s happening with your iFoodPulse platform today.': '以下是您的高質食品供應商平台今天的狀況。',
   'Last updated': '最後更新',
   'Total Members': '總會員數',
   'Active Orders': '活躍訂單',
@@ -76,7 +76,7 @@ export const translations = {
 
   // Admin Orders Page
   'Order Management': '訂單管理',
-  'Manage all orders from FoodSupplier Pro members': '管理高質食品供應商會員的所有訂單',
+  'Manage all orders from iFoodPulse members': '管理高質食品供應商會員的所有訂單',
   'Export Orders': '匯出訂單',
   'Process Orders': '新增訂單',
   'Pending': '待處理',
@@ -122,7 +122,7 @@ export const translations = {
 
   // Admin Sidebar
   'FoodSupplier': 'iFoodPulse',
-  'Admin Panel': '管理面板',
+  'Admin Panel': '管理系統',
   'Members': '會員',
   'Inventory': '庫存',
   'Analytics': '分析',
@@ -163,10 +163,10 @@ export const translations = {
   // Home Page
   'Premium Food Supply for': '為餐廳提供優質食品供應',
   'Restaurants': '餐廳',
-  'Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.': '透過我們的年度會員計劃，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
+  'Get fresh ingredients, quality meats, and everything you need to run your restaurant efficiently with our yearly membership program.': '透過iFoodPulse，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
   'Start Your Membership': '開始您的會員資格',
   'Browse Products': '瀏覽產品',
-  'Why Choose FoodSupplier Pro?': '為什麼選擇高質食品供應商？',
+  'Why Choose iFoodPulse?': '為什麼選擇高質食品供應商？',
   'We provide everything your restaurant needs with premium quality and reliable service.': '我們以優質品質和可靠服務提供餐廳所需的一切。',
   'Fast Delivery': '快速配送',
   'Get your orders delivered within 24-48 hours to your restaurant doorstep.': '您的訂單將在24-48小時內送達餐廳門口。',
@@ -194,7 +194,7 @@ export const translations = {
   'Browse Products →': '瀏覽產品 →',
   'What Our Members Say': '我們的會員怎麼說',
   'Join thousands of satisfied restaurants across the country.': '加入全國數千間滿意的餐廳。',
-  'FoodSupplier Pro has transformed our restaurant operations. The quality and reliability are unmatched.': '高質食品供應商改變了我們的餐廳營運。品質和可靠性無與倫比。',
+  'iFoodPulse has transformed our restaurant operations. The quality and reliability are unmatched.': '高質食品供應商改變了我們的餐廳營運。品質和可靠性無與倫比。',
   'Excellent service and premium products. Our customers love the quality of ingredients we use.': '優質服務和頂級產品。我們的顧客喜愛我們使用的食材品質。',
   'The membership program is worth every penny. We save time and money while getting better products.': '會員計劃物超所值。我們在獲得更好產品的同時節省時間和金錢。',
   'The Garden Bistro': '花園小館',
@@ -211,7 +211,8 @@ export const translations = {
   'About Us': '關於我們',
   'FAQ': '常見問題',
   'Contact Info': '聯絡資訊',
-  '© 2024 FoodSupplier Pro. All rights reserved.': '© 2024 高質食品供應商。保留所有權利。',
+  '© 2024 iFoodPulse. All rights reserved.': '© 2024 高質食品供應商。保留所有權利。',
+  '© 2025 iFoodPulse. All rights reserved.': '© 2025 高質食品供應商。保留所有權利。',
   'Privacy Policy': '隱私政策',
   'Terms of Service': '服務條款',
   'Cookie Policy': 'Cookie 政策',
@@ -220,4 +221,5 @@ export const translations = {
   'Sarah Johnson': '莎拉·約翰遜',
   'Michael Chen': '陳邁克',
   'Emily Rodriguez': '艾米莉·羅德里格斯',
+  'Item added to cart': '已加入購物車',
 }; 

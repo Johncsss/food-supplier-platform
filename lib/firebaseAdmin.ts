@@ -72,30 +72,21 @@ if (!admin.apps.length) {
       }
     }
 
-    // Fallback to bundled service account for local dev only
-    // Try require first, then fallback to fs.readFileSync (works better with Next.js)
+    // Fallback to local service account for local dev only (never bundle on Vercel)
     if (!initialized) {
       try {
-        let serviceAccount: admin.ServiceAccount;
-        
-        // First try require (works in some Next.js configurations)
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          serviceAccount = require('../serviceAccountKey.json');
-        } catch (requireError) {
-          // If require fails, try reading with fs (more reliable in Next.js)
-          const fs = require('fs');
-          const path = require('path');
-          const serviceAccountPath = path.join(process.cwd(), 'serviceAccountKey.json');
+        const fs = require('fs');
+        const path = require('path');
+        const serviceAccountPath = path.join(process.cwd(), 'serviceAccountKey.json');
+        if (process.env.NODE_ENV !== 'production' && fs.existsSync(serviceAccountPath)) {
           const serviceAccountData = fs.readFileSync(serviceAccountPath, 'utf8');
-          serviceAccount = JSON.parse(serviceAccountData);
+          const serviceAccount = JSON.parse(serviceAccountData);
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://foodbooking-3ccec-default-rtdb.asia-southeast1.firebasedatabase.app'
+          });
+          initialized = true;
         }
-        
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
-          databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://foodbooking-3ccec-default-rtdb.asia-southeast1.firebasedatabase.app'
-        });
-        initialized = true;
       } catch (loadError: any) {
         // File doesn't exist or can't be loaded - this is expected in production
         if (process.env.NODE_ENV !== 'production') {

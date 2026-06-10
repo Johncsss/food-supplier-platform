@@ -1,6 +1,14 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut as firebaseSignOut,
+  deleteUser,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { User } from '../../../shared/types';
 
@@ -11,6 +19,10 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string, restaurantName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
+  justLoggedOut: boolean;
+  clearJustLoggedOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,17 +39,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [justLoggedOut, setJustLoggedOut] = useState(false);
 
   const fetchUserData = async (userId: string) => {
     try {
       const userDoc = await getDoc(doc(db, 'users', userId));
+      let userData: User | null = null;
       if (userDoc.exists()) {
-        const userData = userDoc.data() as User;
+        userData = userDoc.data() as User;
         setUser(userData);
         // Don't set firebaseUser here - it should be set in the auth state listener
       }
+      return userData;
     } catch (error) {
       console.error('Error fetching user data:', error);
+      throw error;
+    }
+  };
+
+  const refreshUser = async () => {
+    try {
+      const uid = firebaseUser?.uid;
+      if (!uid) return;
+      await fetchUserData(uid);
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
     }
   };
 
@@ -59,6 +85,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           state: '',
           zipCode: ''
         },
+        profileImageUrl: '',
+        profileBackgroundUrl: '',
         membershipStatus: 'inactive',
         membershipExpiry: null,
         memberPoints: 0,
@@ -75,7 +103,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // Sign in successful - Firebase's onAuthStateChanged will automatically trigger
+      // and update firebaseUser state, which will cause AppNavigator to switch to TabNavigator
+      if (__DEV__) {
+        console.log('Login successful for user:', userCredential.user.email);
+      }
+      return userCredential;
     } catch (error) {
       console.error('Error signing in:', error);
       throw error;
@@ -84,9 +118,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
+      setJustLoggedOut(true);
       await firebaseSignOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);
+      throw error;
+    }
+  };
+
+  const deleteAccount = async (password: string) => {
+    const user = auth.currentUser;
+    if (!user?.email) throw new Error('Not signed in');
+    try {
+      const credential = EmailAuthProvider.credential(user.email, password);
+      await reauthenticateWithCredential(user, credential);
+      const uid = user.uid;
+      try {
+        await deleteDoc(doc(db, 'users', uid));
+      } catch (e) {
+        console.warn('Firestore user doc delete failed (may be ok):', e);
+      }
+      await deleteUser(user);
+      setJustLoggedOut(true);
+    } catch (error) {
+      console.error('Error deleting account:', error);
       throw error;
     }
   };
@@ -95,10 +150,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       try {
         if (!fbUser) {
+          if (__DEV__) {
+            console.log('Auth state: User signed out');
+          }
           setUser(null);
           setFirebaseUser(null);
           setLoading(false);
           return;
+        }
+        if (__DEV__) {
+          console.log('Auth state: User signed in -', fbUser.email);
         }
         setFirebaseUser(fbUser);
         const uid = fbUser.uid;
@@ -111,6 +172,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           restaurantName: '',
           phone: '',
           address: { street: '', city: '', state: '', zipCode: '' },
+          profileImageUrl: '',
+          profileBackgroundUrl: '',
           membershipStatus: 'inactive',
           membershipExpiry: null,
           memberPoints: 0,
@@ -160,7 +223,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     signUp,
     signIn,
-    signOut
+    signOut,
+    deleteAccount,
+    refreshUser,
+    justLoggedOut,
+    clearJustLoggedOut: () => setJustLoggedOut(false),
   };
 
   return (

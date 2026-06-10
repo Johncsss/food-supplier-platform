@@ -1,246 +1,447 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  BuildingStorefrontIcon, 
-  HomeIcon, 
-  ArchiveBoxIcon, 
-  BeakerIcon, 
-  SparklesIcon, 
+import React, { useEffect, useState } from 'react';
+import Header from '@/components/ui/Header';
+import Footer from '@/components/ui/Footer';
+import { BuildingStorefrontIcon, HomeIcon, ArchiveBoxIcon, BeakerIcon, SparklesIcon, SunIcon, PhoneIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/components/providers/AuthProvider';
+import toast from 'react-hot-toast';
+import { ImageUploader } from '@/components/ui/ImageUploader';
+
+const DEFAULT_AREAS = {
+  banner: {
+    imageUrl: '',
+  },
+  hero: {
+    title: '專業餐廳傢具',
+    description: '提供各式餐廳傢具，打造舒適優雅的用餐環境',
+    button1Text: '免費諮詢',
+    button2Text: '預約參觀',
+  },
+  categories: {
+    title: '傢具類別',
+    description: '點擊查看詳細資訊，我們提供多種傢具類別滿足不同需求',
+    items: [
+      {
+        title: '餐桌椅組合',
+        description: '各式餐桌椅組合，適合不同餐廳風格',
+        priceRange: 'HKD$ 2,000 - 15,000',
+      },
+      {
+        title: '沙發座椅',
+        description: '舒適的沙發座椅，提升用餐體驗',
+        priceRange: 'HKD$ 3,000 - 25,000',
+      },
+      {
+        title: '收納櫃',
+        description: '實用的收納櫃，保持餐廳整潔',
+        priceRange: 'HKD$ 1,500 - 12,000',
+      },
+      {
+        title: '吧台設備',
+        description: '專業吧台設備，打造完美酒吧區',
+        priceRange: 'HKD$ 5,000 - 30,000',
+      },
+      {
+        title: '裝飾傢具',
+        description: '精美裝飾傢具，營造餐廳氛圍',
+        priceRange: 'HKD$ 800 - 8,000',
+      },
+      {
+        title: '戶外傢具',
+        description: '耐用戶外傢具，適合露天用餐區',
+        priceRange: 'HKD$ 2,500 - 20,000',
+      },
+    ],
+  },
+  services: {
+    title: '服務特色',
+    description: '提供客製化設計、專業安裝、品質保證與完善售後服務',
+    items: [
+      {
+        title: '客製化設計',
+        description: '根據餐廳風格提供客製化傢具設計',
+      },
+      {
+        title: '專業安裝',
+        description: '專業團隊提供傢具安裝服務',
+      },
+      {
+        title: '品質保證',
+        description: '使用優質材料，提供品質保證',
+      },
+      {
+        title: '售後服務',
+        description: '完善的售後服務與維護保養',
+      },
+    ],
+  },
+  contact: {
+    title: '立即諮詢',
+    description: '專業團隊為您提供傢具諮詢與報價服務',
+    button1Text: '聯絡我們',
+    button2Text: '預約參觀',
+  },
+} as const;
+
+const CATEGORY_ICONS = [
+  BuildingStorefrontIcon,
+  HomeIcon,
+  ArchiveBoxIcon,
+  BeakerIcon,
+  SparklesIcon,
   SunIcon,
-  CheckCircleIcon,
-  WrenchScrewdriverIcon,
-  ShieldCheckIcon,
-  CogIcon,
-  PhoneIcon,
-  CalendarIcon,
-  StarIcon
-} from '@heroicons/react/24/outline';
+];
+
+const CATEGORY_COLORS = [
+  'bg-emerald-500',
+  'bg-blue-500',
+  'bg-amber-500',
+  'bg-purple-500',
+  'bg-pink-500',
+  'bg-cyan-500',
+];
 
 export default function RestaurantFurniturePage() {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const { isAdmin } = useAuth();
+  const [areas, setAreas] = useState(DEFAULT_AREAS);
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [tempAreas, setTempAreas] = useState(DEFAULT_AREAS);
+  const [saving, setSaving] = useState(false);
 
-  const furnitureCategories = [
-    {
-      id: 1,
-      title: '餐桌椅組合',
-      description: '各式餐桌椅組合，適合不同餐廳風格',
-      icon: BuildingStorefrontIcon,
-      color: 'bg-emerald-500',
-      items: ['圓桌', '方桌', '吧台椅', '餐椅', '長桌'],
-      priceRange: 'HKD$ 2,000 - 15,000',
-      popular: true
-    },
-    {
-      id: 2,
-      title: '沙發座椅',
-      description: '舒適的沙發座椅，提升用餐體驗',
-      icon: HomeIcon,
-      color: 'bg-blue-500',
-      items: ['單人沙發', '雙人沙發', 'L型沙發', '貴妃椅', '腳凳'],
-      priceRange: 'HKD$ 3,000 - 25,000',
-      popular: true
-    },
-    {
-      id: 3,
-      title: '收納櫃',
-      description: '實用的收納櫃，保持餐廳整潔',
-      icon: ArchiveBoxIcon,
-      color: 'bg-amber-500',
-      items: ['餐具櫃', '酒櫃', '展示櫃', '文件櫃', '雜物櫃'],
-      priceRange: 'HKD$ 1,500 - 12,000',
-      popular: false
-    },
-    {
-      id: 4,
-      title: '吧台設備',
-      description: '專業吧台設備，打造完美酒吧區',
-      icon: BeakerIcon,
-      color: 'bg-purple-500',
-      items: ['吧台桌', '高腳椅', '酒架', '冰櫃', '調酒台'],
-      priceRange: 'HKD$ 5,000 - 30,000',
-      popular: true
-    },
-    {
-      id: 5,
-      title: '裝飾傢具',
-      description: '精美裝飾傢具，營造餐廳氛圍',
-      icon: SparklesIcon,
-      color: 'bg-red-500',
-      items: ['屏風', '花架', '裝飾櫃', '鏡子', '藝術品'],
-      priceRange: 'HKD$ 800 - 8,000',
-      popular: false
-    },
-    {
-      id: 6,
-      title: '戶外傢具',
-      description: '耐用戶外傢具，適合露天用餐區',
-      icon: SunIcon,
-      color: 'bg-cyan-500',
-      items: ['戶外桌椅', '遮陽傘', '戶外沙發', '燒烤桌', '花園椅'],
-      priceRange: 'HKD$ 2,500 - 20,000',
-      popular: false
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        // Use API route which uses admin SDK and works for non-logged-in users
+        const response = await fetch('/api/pages/restaurant-furniture');
+        if (cancelled) return;
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch page data');
+        }
+        
+        const result = await response.json();
+        if (result.success && result.page?.areas) {
+          // API already merges defaults with CMS data, use it directly
+          setAreas(result.page.areas);
+          setTempAreas(result.page.areas);
+        } else {
+          // Fallback to defaults if API returns no areas
+          setAreas(DEFAULT_AREAS);
+          setTempAreas(DEFAULT_AREAS);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load restaurant furniture content:', error);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const startEditing = (section: string) => {
+    setEditingSection(section);
+    setTempAreas(JSON.parse(JSON.stringify(areas)));
+  };
+
+  const cancelEditing = () => {
+    setEditingSection(null);
+    setTempAreas(JSON.parse(JSON.stringify(areas)));
+  };
+
+  const saveChanges = async () => {
+    if (!editingSection) return;
+    
+    try {
+      setSaving(true);
+      const pageRef = doc(db, 'pages', 'restaurant-furniture');
+      await setDoc(pageRef, {
+        title: 'restaurant-furniture',
+        slug: 'restaurant-furniture',
+        areas: tempAreas,
+        updatedAt: Timestamp.now(),
+      }, { merge: true });
+      
+      setAreas(JSON.parse(JSON.stringify(tempAreas)));
+      setEditingSection(null);
+      toast.success('內容已儲存');
+    } catch (error) {
+      console.error('Failed to save:', error);
+      toast.error('儲存失敗，請稍後再試');
+    } finally {
+      setSaving(false);
     }
-  ];
+  };
 
-  const services = [
-    {
-      title: '客製化設計',
-      description: '根據餐廳風格提供客製化傢具設計',
-      icon: WrenchScrewdriverIcon,
-      features: ['免費設計諮詢', '3D效果圖', '材質選擇', '尺寸客製']
-    },
-    {
-      title: '專業安裝',
-      description: '專業團隊提供傢具安裝服務',
-      icon: CogIcon,
-      features: ['免費安裝', '現場組裝', '品質檢查', '使用指導']
-    },
-    {
-      title: '品質保證',
-      description: '使用優質材料，提供品質保證',
-      icon: ShieldCheckIcon,
-      features: ['原廠保固', '品質認證', '售後服務', '維修保養']
-    },
-    {
-      title: '售後服務',
-      description: '完善的售後服務與維護保養',
-      icon: CogIcon,
-      features: ['定期保養', '故障維修', '零件更換', '技術支援']
+  const updateArea = (path: string[], value: any) => {
+    setTempAreas((prev) => {
+      const newAreas = JSON.parse(JSON.stringify(prev));
+      let current: any = newAreas;
+      for (let i = 0; i < path.length - 1; i++) {
+        current = current[path[i]];
+      }
+      current[path[path.length - 1]] = value;
+      return newAreas;
+    });
+  };
+
+  const EditButton = ({ section }: { section: string }) => {
+    if (!isAdmin) return null;
+    
+    const isEditing = editingSection === section;
+    
+    if (isEditing) {
+      return (
+        <div className="flex gap-2 absolute top-4 right-4 z-10">
+          <button
+            onClick={saveChanges}
+            disabled={saving}
+            className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-1"
+            title="儲存"
+          >
+            <CheckIcon className="w-4 h-4" />
+            {saving ? '儲存中...' : '儲存'}
+          </button>
+          <button
+            onClick={cancelEditing}
+            className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 flex items-center gap-1"
+            title="取消"
+          >
+            <XMarkIcon className="w-4 h-4" />
+            取消
+          </button>
+        </div>
+      );
     }
-  ];
-
-  const testimonials = [
-    {
-      id: 1,
-      name: '張老闆',
-      restaurant: '港式茶餐廳',
-      rating: 5,
-      comment: '傢具品質很好，安裝服務也很專業，客人反應都很滿意！'
-    },
-    {
-      id: 2,
-      name: '李經理',
-      restaurant: '西式餐廳',
-      rating: 5,
-      comment: '客製化設計很符合我們的需求，整體效果超出預期。'
-    },
-    {
-      id: 3,
-      name: '王店長',
-      restaurant: '咖啡廳',
-      rating: 5,
-      comment: '售後服務很到位，有任何問題都能快速解決。'
-    }
-  ];
-
-  const handleCategoryPress = (category: any) => {
-    setSelectedCategory(selectedCategory === category.title ? null : category.title);
+    
+    return (
+      <button
+        onClick={() => startEditing(section)}
+        className="absolute top-4 right-4 bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 z-10 flex items-center gap-1"
+        title="編輯"
+      >
+        <PencilIcon className="w-4 h-4" />
+        編輯
+      </button>
+    );
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <h1 className="text-4xl lg:text-5xl font-bold mb-6">
-                專業餐廳傢具
-              </h1>
-              <p className="text-xl text-emerald-100 mb-8 leading-relaxed">
-                提供各式餐廳傢具，打造舒適優雅的用餐環境
-              </p>
-              <div className="grid grid-cols-3 gap-8 mb-8">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-emerald-200">500+</div>
-                  <div className="text-emerald-100">傢具款式</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-emerald-200">1000+</div>
-                  <div className="text-emerald-100">滿意客戶</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-emerald-200">5年</div>
-                  <div className="text-emerald-100">品質保固</div>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <button className="bg-white text-emerald-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-                  免費諮詢
-                </button>
-                <button className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-emerald-600 transition-colors">
-                  預約參觀
-                </button>
+      <Header />
+      {/* Hero Banner Section */}
+      <section className="relative w-full h-64 sm:h-80 md:h-96 overflow-hidden">
+        <EditButton section="banner" />
+        {editingSection === 'banner' && isAdmin ? (
+          <div className="w-full h-full bg-gray-100 p-8">
+            <div className="max-w-4xl mx-auto">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Banner 圖片</label>
+                <ImageUploader
+                  value={tempAreas.banner?.imageUrl || ''}
+                  onChange={(url) => updateArea(['banner', 'imageUrl'], url)}
+                  folder="homepage_banners"
+                  onError={(error) => toast.error(error)}
+                />
               </div>
             </div>
-            <div className="flex justify-center">
-              <div className="w-80 h-80 bg-emerald-100 rounded-full flex items-center justify-center">
-                <HomeIcon className="w-40 h-40 text-emerald-600" />
+          </div>
+        ) : (
+          <>
+            {areas.banner?.imageUrl ? (
+              <div className="relative w-full h-full">
+                <img
+                  src={areas.banner.imageUrl}
+                  alt="Banner"
+                  className="w-full h-full object-cover"
+                  style={{ width: '100%', maxWidth: '100%', height: '100%', objectFit: 'cover' }}
+                />
               </div>
-            </div>
+            ) : (
+              <div className="w-full h-full bg-gradient-to-r from-emerald-600 to-emerald-800">
+                <div className="absolute inset-0 bg-black opacity-20"></div>
+                <div className="relative h-full flex items-center justify-center">
+                  <div className="w-full h-full bg-gray-300 flex items-center justify-center">
+                    <div className="text-center text-gray-600">
+                      <p className="text-lg font-semibold">傢具訂製 Banner</p>
+                      <p className="text-sm mt-2">Dummy Banner Image</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* Categories Section */}
+      <section className="relative py-20">
+        <EditButton section="categories" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            {editingSection === 'categories' && isAdmin ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={tempAreas.categories.title}
+                  onChange={(e) => updateArea(['categories', 'title'], e.target.value)}
+                  className="text-3xl lg:text-4xl font-bold mb-4 w-full border-2 border-blue-500 rounded p-2 text-gray-900"
+                />
+                <textarea
+                  value={tempAreas.categories.description}
+                  onChange={(e) => updateArea(['categories', 'description'], e.target.value)}
+                  className="text-xl text-gray-600 max-w-3xl mx-auto w-full border-2 border-blue-500 rounded p-2"
+                  rows={2}
+                />
+              </div>
+            ) : (
+              <>
+                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                  {areas.categories.title}
+                </h2>
+                <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+                  {areas.categories.description}
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {areas.categories.items.map((category, index) => {
+              return (
+                <div
+                  key={index}
+                  className="bg-white rounded-xl shadow-lg p-8 hover:shadow-xl transition-shadow relative"
+                >
+                  {editingSection === 'categories' && isAdmin ? (
+                    <div className="space-y-4">
+                      <input
+                        type="text"
+                        value={tempAreas.categories.items[index].title}
+                        onChange={(e) => {
+                          const newItems = [...tempAreas.categories.items];
+                          newItems[index] = { ...newItems[index], title: e.target.value as any };
+                          setTempAreas((prev) => ({ ...prev, categories: { ...prev.categories, items: newItems as unknown as typeof DEFAULT_AREAS.categories.items } }));
+                        }}
+                        className="text-xl font-semibold text-gray-900 mb-4 w-full border-2 border-blue-500 rounded p-2"
+                      />
+                      <textarea
+                        value={tempAreas.categories.items[index].description}
+                        onChange={(e) => {
+                          const newItems = [...tempAreas.categories.items];
+                          newItems[index] = { ...newItems[index], description: e.target.value as any };
+                          setTempAreas((prev) => ({ ...prev, categories: { ...prev.categories, items: newItems as unknown as typeof DEFAULT_AREAS.categories.items } }));
+                        }}
+                        className="text-gray-600 leading-relaxed mb-4 w-full border-2 border-blue-500 rounded p-2"
+                        rows={3}
+                      />
+                      <input
+                        type="text"
+                        value={tempAreas.categories.items[index].priceRange}
+                        onChange={(e) => {
+                          const newItems = [...tempAreas.categories.items];
+                          newItems[index] = { ...newItems[index], priceRange: e.target.value as any };
+                          setTempAreas((prev) => ({ ...prev, categories: { ...prev.categories, items: newItems as unknown as typeof DEFAULT_AREAS.categories.items } }));
+                        }}
+                        className="text-emerald-600 font-semibold w-full border-2 border-blue-500 rounded p-2"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                        {category.title}
+                      </h3>
+                      <p className="text-gray-600 leading-relaxed mb-4">
+                        {category.description}
+                      </p>
+                      <p className="text-emerald-600 font-semibold">
+                        {category.priceRange}
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* Furniture Categories Section */}
-      <section className="py-20">
+      {/* Services Section */}
+      <section className="relative py-20 bg-white">
+        <EditButton section="services" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-              傢具類別
-            </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              點擊查看詳細資訊，我們提供多種傢具類別滿足不同需求
-            </p>
+            {editingSection === 'services' && isAdmin ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={tempAreas.services.title}
+                  onChange={(e) => updateArea(['services', 'title'], e.target.value)}
+                  className="text-3xl lg:text-4xl font-bold mb-4 w-full border-2 border-blue-500 rounded p-2 text-gray-900"
+                />
+                <textarea
+                  value={tempAreas.services.description}
+                  onChange={(e) => updateArea(['services', 'description'], e.target.value)}
+                  className="text-xl text-gray-600 max-w-3xl mx-auto w-full border-2 border-blue-500 rounded p-2"
+                  rows={2}
+                />
+              </div>
+            ) : (
+              <>
+                <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                  {areas.services.title}
+                </h2>
+                <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+                  {areas.services.description}
+                </p>
+              </>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {furnitureCategories.map((category) => (
-              <div 
-                key={category.id} 
-                className={`bg-white rounded-xl shadow-lg p-8 hover:shadow-xl transition-all cursor-pointer ${
-                  selectedCategory === category.title ? 'ring-2 ring-emerald-500' : ''
-                }`}
-                onClick={() => handleCategoryPress(category)}
-              >
-                <div className="flex items-center mb-6">
-                  <div className={`w-16 h-16 ${category.color} rounded-xl flex items-center justify-center mr-4`}>
-                    <category.icon className="w-8 h-8 text-white" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {areas.services.items.map((service, index) => (
+              <div key={index} className="text-center relative">
+                {editingSection === 'services' && isAdmin ? (
+                  <div className="space-y-4">
+                    <input
+                      type="text"
+                      value={tempAreas.services.items[index].title}
+                      onChange={(e) => {
+                        const newItems = [...tempAreas.services.items];
+                        newItems[index] = { ...newItems[index], title: e.target.value as any };
+                        setTempAreas((prev) => ({ ...prev, services: { ...prev.services, items: newItems as unknown as typeof DEFAULT_AREAS.services.items } }));
+                      }}
+                      className="text-xl font-semibold text-gray-900 mb-4 w-full border-2 border-blue-500 rounded p-2"
+                    />
+                    <textarea
+                      value={tempAreas.services.items[index].description}
+                      onChange={(e) => {
+                        const newItems = [...tempAreas.services.items];
+                        newItems[index] = { ...newItems[index], description: e.target.value as any };
+                        setTempAreas((prev) => ({ ...prev, services: { ...prev.services, items: newItems as unknown as typeof DEFAULT_AREAS.services.items } }));
+                      }}
+                      className="text-gray-600 leading-relaxed w-full border-2 border-blue-500 rounded p-2"
+                      rows={3}
+                    />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        {category.title}
-                      </h3>
-                      {category.popular && (
-                        <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
-                          熱門
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-gray-600 text-sm mb-2">
-                      {category.description}
+                ) : (
+                  <>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                      {service.title}
+                    </h3>
+                    <p className="text-gray-600 leading-relaxed">
+                      {service.description}
                     </p>
-                    <p className="text-emerald-600 font-semibold text-sm">
-                      {category.priceRange}
-                    </p>
-                  </div>
-                </div>
-                
-                {selectedCategory === category.title && (
-                  <div className="border-t pt-6">
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {category.items.map((item, index) => (
-                        <span key={index} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                    <button className="w-full bg-emerald-600 text-white py-2 rounded-lg font-semibold hover:bg-emerald-700 transition-colors">
-                      查看詳細資訊
-                    </button>
-                  </div>
+                  </>
                 )}
               </div>
             ))}
@@ -248,109 +449,57 @@ export default function RestaurantFurniturePage() {
         </div>
       </section>
 
-      {/* Services Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-              服務特色
-            </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              我們提供全方位的傢具服務，從設計到安裝，確保客戶滿意
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {services.map((service, index) => (
-              <div key={index} className="bg-gray-50 rounded-xl p-8">
-                <div className="flex items-start mb-6">
-                  <div className="w-16 h-16 bg-emerald-100 rounded-xl flex items-center justify-center mr-6">
-                    <service.icon className="w-8 h-8 text-emerald-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                      {service.title}
-                    </h3>
-                    <p className="text-gray-600 mb-4">
-                      {service.description}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {service.features.map((feature, featureIndex) => (
-                        <span key={featureIndex} className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm flex items-center">
-                          <CheckCircleIcon className="w-4 h-4 mr-1" />
-                          {feature}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-              客戶評價
-            </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              聽聽我們的客戶怎麼說
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial) => (
-              <div key={testimonial.id} className="bg-white rounded-xl shadow-lg p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h4 className="text-lg font-semibold text-gray-900">
-                      {testimonial.name}
-                    </h4>
-                    <p className="text-gray-600 text-sm">
-                      {testimonial.restaurant}
-                    </p>
-                  </div>
-                  <div className="flex">
-                    {[...Array(testimonial.rating)].map((_, index) => (
-                      <StarIcon key={index} className="w-5 h-5 text-yellow-400 fill-current" />
-                    ))}
-                  </div>
-                </div>
-                <p className="text-gray-600 italic leading-relaxed">
-                  "{testimonial.comment}"
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Contact Section */}
-      <section className="py-20 bg-emerald-600">
+      <section className="relative py-20" style={{backgroundColor: 'rgb(11, 134, 40)'}}>
+        <EditButton section="contact" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
-            立即諮詢
-          </h2>
-          <p className="text-xl text-emerald-100 mb-8 max-w-3xl mx-auto">
-            專業團隊為您提供傢具諮詢與報價服務
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-white text-emerald-600 px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-colors flex items-center justify-center">
-              <PhoneIcon className="w-5 h-5 mr-2" />
-              聯絡我們
-            </button>
-            <button className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-emerald-600 transition-colors flex items-center justify-center">
-              <CalendarIcon className="w-5 h-5 mr-2" />
-              預約參觀
-            </button>
-          </div>
+          {editingSection === 'contact' && isAdmin ? (
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={tempAreas.contact.title}
+                onChange={(e) => updateArea(['contact', 'title'], e.target.value)}
+                className="text-3xl lg:text-4xl font-bold mb-6 w-full border-2 border-blue-500 rounded p-2 text-gray-900"
+              />
+              <textarea
+                value={tempAreas.contact.description}
+                onChange={(e) => updateArea(['contact', 'description'], e.target.value)}
+                className="text-xl mb-8 max-w-3xl mx-auto w-full border-2 border-blue-500 rounded p-2 text-gray-900"
+                rows={3}
+              />
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <input
+                  type="text"
+                  value={tempAreas.contact.button1Text}
+                  onChange={(e) => updateArea(['contact', 'button1Text'], e.target.value)}
+                  className="bg-white text-emerald-600 px-8 py-4 rounded-lg font-semibold border-2 border-blue-500 text-center"
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
+                {areas.contact.title}
+              </h2>
+              <p className="text-xl text-emerald-100 mb-8 max-w-3xl mx-auto">
+                {areas.contact.description}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <a
+                  href="https://wa.me/85298636938?text=您好，我想查詢。"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white text-emerald-600 px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-colors flex items-center justify-center"
+                >
+                  <PhoneIcon className="w-5 h-5 mr-2" />
+                  {areas.contact.button1Text}
+                </a>
+              </div>
+            </>
+          )}
         </div>
       </section>
+      <Footer />
     </div>
   );
 }
-

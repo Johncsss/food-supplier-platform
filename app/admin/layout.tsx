@@ -16,7 +16,9 @@ import {
   Briefcase,
   Store,
   Settings,
-  Cog
+  Cog,
+  ClipboardCheck,
+  ArrowLeft
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -24,12 +26,14 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { t } from '@/lib/translate';
+import toast from 'react-hot-toast';
 
 interface SidebarItem {
   name: string;
   href: string;
   icon: any;
   badge?: number;
+  permissionKey?: string;
 }
 
 export default function AdminLayout({
@@ -40,18 +44,20 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingOrders, setPendingOrders] = useState(0);
   const [loadingPendingCount, setLoadingPendingCount] = useState(true);
+  const [pendingPointRequests, setPendingPointRequests] = useState(0);
+  const [newMembersCount, setNewMembersCount] = useState(0);
   const [sidebarConfig, setSidebarConfig] = useState<any>(null);
   const [loadingSidebarConfig, setLoadingSidebarConfig] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAdmin, isSupplier, loading, signOut } = useAuth();
+  const { user, isAdmin, isSupplier, loading, signOut, adminPermissions } = useAuth();
 
   // Redirect if not authenticated or not admin
   useEffect(() => {
     if (!loading) {
       if (!user) {
         // Not authenticated, redirect to login
-        router.push('/login?redirect=/admin');
+        router.push('/login?redirect=/admin/welcome');
       } else if (isSupplier) {
         // If supplier tries to access admin, redirect to supplier dashboard
         router.push('/supplier');
@@ -60,8 +66,9 @@ export default function AdminLayout({
         // Exception: allow admin@test.com (kMOVDljmF8a1N8WVwQYYjfBMmNd2) temporarily
         router.push('/?error=unauthorized');
       }
+      // Note: Login page already redirects admins to /admin/welcome, so we don't need to redirect here
     }
-  }, [user, isAdmin, isSupplier, loading, router]);
+  }, [user, isAdmin, isSupplier, loading, router, pathname]);
 
   // Optimized fetch function with caching
   const fetchPendingOrdersCount = useCallback(async () => {
@@ -88,16 +95,66 @@ export default function AdminLayout({
     }
   }, []);
 
+  const fetchPendingPointRequests = useCallback(async () => {
+    try {
+      const res = await fetch('/api/points-purchase-requests');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPendingPointRequests(data.meta?.pendingCount || 0);
+      } else {
+        setPendingPointRequests(0);
+      }
+    } catch (error) {
+      console.error('Error fetching pending point requests:', error);
+      setPendingPointRequests(0);
+    }
+  }, []);
+
+  const fetchNewMembersCount = useCallback(async () => {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      let newMembers = 0;
+      snapshot.forEach((doc) => {
+        const data: any = doc.data();
+        // Count members with inactive status (new registrations)
+        const isRestaurantMember = !data.role || 
+                                   data.role === 'restaurant' || 
+                                   data.role === 'member' || 
+                                   data.role === 'customer';
+        if (isRestaurantMember && data.membershipStatus === 'inactive') {
+          newMembers++;
+        }
+      });
+      setNewMembersCount((prev) => (prev !== newMembers ? newMembers : prev));
+    } catch (error: any) {
+      // Silently handle permission errors
+      if (error?.code === 'permission-denied') {
+        setNewMembersCount(0);
+      } else {
+        console.error('Error fetching new members count:', error);
+      }
+    }
+  }, []);
+
   // Fetch pending orders count with optimized polling
   useEffect(() => {
+    fetchPendingPointRequests();
+    const pointsInterval = setInterval(fetchPendingPointRequests, 20000);
     // Fetch immediately
     fetchPendingOrdersCount();
+    fetchNewMembersCount();
     
     // Set up polling every 20 seconds (reduced frequency for better performance)
-    const interval = setInterval(fetchPendingOrdersCount, 20000);
+    const ordersInterval = setInterval(fetchPendingOrdersCount, 20000);
+    const membersInterval = setInterval(fetchNewMembersCount, 20000);
     
-    return () => clearInterval(interval);
-  }, [fetchPendingOrdersCount]);
+    return () => {
+      clearInterval(pointsInterval);
+      clearInterval(ordersInterval);
+      clearInterval(membersInterval);
+    };
+  }, [fetchPendingOrdersCount, fetchPendingPointRequests, fetchNewMembersCount]);
 
   // Load sidebar configuration
   useEffect(() => {
@@ -125,56 +182,106 @@ export default function AdminLayout({
 
   const allSidebarItems: SidebarItem[] = [
     {
+      name: '返回首頁',
+      href: '/',
+      icon: ArrowLeft,
+      permissionKey: undefined, // No permission check needed for home link
+    },
+    {
       name: t('Dashboard'),
       href: '/admin',
       icon: LayoutDashboard,
+      permissionKey: 'dashboard',
     },
     {
       name: t('Orders'),
       href: '/admin/orders',
       icon: ShoppingCart,
       badge: pendingOrders > 0 ? pendingOrders : undefined,
-    },
-    {
-      name: '餐廳會員',
-      href: '/admin/members',
-      icon: Users,
-    },
-    {
-      name: '銷售團隊',
-      href: '/admin/sales-team',
-      icon: Briefcase,
-    },
-    {
-      name: '供應商',
-      href: '/admin/suppliers',
-      icon: Store,
+      permissionKey: 'orders',
     },
     {
       name: t('Products'),
       href: '/admin/products',
       icon: Package,
+      permissionKey: 'products',
+    },
+    {
+      name: '餐廳管理',
+      href: '/admin/members',
+      icon: Users,
+      badge: newMembersCount > 0 ? newMembersCount : undefined,
+      permissionKey: 'members',
+    },
+    {
+      name: '供應商',
+      href: '/admin/suppliers',
+      icon: Store,
+      permissionKey: 'suppliers',
+    },
+    {
+      name: '銷售團隊',
+      href: '/admin/sales-team',
+      icon: Briefcase,
+      permissionKey: 'salesTeam',
+    },
+    {
+      name: '點數審核',
+      href: '/admin/points-approvals',
+      icon: ClipboardCheck,
+      badge: pendingPointRequests > 0 ? pendingPointRequests : undefined,
+      permissionKey: 'pointsApprovals',
     },
     {
       name: t('Inventory'),
       href: '/admin/inventory',
       icon: BarChart3,
-      badge: 5,
+      permissionKey: 'inventory',
     },
     {
       name: t('Settings'),
       href: '/admin/settings',
       icon: Settings,
+      permissionKey: 'settings',
     },
     {
       name: '內容管理',
       href: '/admin/content',
       icon: Home,
+      permissionKey: 'content',
+    },
+    {
+      name: '系統管理',
+      href: '/admin/system',
+      icon: Cog,
+      permissionKey: 'system',
     },
   ];
 
-  // Filter sidebar items based on configuration
+  // Helper function to check if user has permission for a page
+  const hasPermission = (permissionKey: string): boolean => {
+    // If no permissions object exists, allow access (backward compatibility for existing admins)
+    if (!adminPermissions) {
+      return true;
+    }
+    // If permissions object exists but this key is not set, default to false (restrictive)
+    // Only allow if explicitly set to true
+    return adminPermissions[permissionKey as keyof typeof adminPermissions] === true;
+  };
+
+  // Filter sidebar items based on permissions and configuration
   const sidebarItems = allSidebarItems.filter(item => {
+    // Skip permission check for items without permissionKey (like "返回首頁")
+    if (item.permissionKey === undefined) {
+      return true;
+    }
+    
+    // First check permissions
+    if (item.permissionKey && !hasPermission(item.permissionKey)) {
+      return false;
+    }
+    
+    // Then check sidebar configuration
     if (!sidebarConfig || !sidebarConfig.menus) return true; // Show all by default if no config
     const menuConfig = sidebarConfig.menus.find((m: any) => {
       // Match by href (more reliable than name/icon)
@@ -183,6 +290,27 @@ export default function AdminLayout({
     // If config exists for this menu, use its enabled status; otherwise show it
     return menuConfig ? menuConfig.enabled !== false : true;
   });
+
+  // Check if current page requires permission and user doesn't have it
+  useEffect(() => {
+    if (!loading && isAdmin && user) {
+      const currentPageItem = allSidebarItems.find(item => item.href === pathname);
+      if (currentPageItem?.permissionKey) {
+        const hasAccess = hasPermission(currentPageItem.permissionKey);
+        console.log(`Permission check for ${currentPageItem.href}:`, {
+          permissionKey: currentPageItem.permissionKey,
+          hasAccess,
+          adminPermissions,
+          userEmail: user.email
+        });
+        if (!hasAccess) {
+          // Redirect to welcome page if user doesn't have permission
+          toast.error(`您沒有權限訪問 ${currentPageItem.name}`);
+          router.push('/admin/welcome');
+        }
+      }
+    }
+  }, [pathname, loading, isAdmin, user, adminPermissions, router]);
 
   // Show loading state while checking authentication
   if (loading) {

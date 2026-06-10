@@ -5,14 +5,24 @@ import Link from 'next/link';
 import { collection, getDocs, query, setDoc, doc, Timestamp, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ImageUploader } from '@/components/ui/ImageUploader';
+import {
+  PRIVACY_DEFAULT_CONTENT,
+  PRIVACY_DEFAULT_TITLE,
+  TERMS_DEFAULT_CONTENT,
+  TERMS_DEFAULT_TITLE,
+  PURCHASE_SALE_DEFAULT_CONTENT,
+  PURCHASE_SALE_DEFAULT_TITLE,
+  FOOTER_DEFAULT_TITLE,
+  getDefaultFooterAreas,
+} from '@/lib/static-pages';
 function defaultHomepageAreas() {
   return {
     hero: {
       title: '為餐廳提供優質食品供應',
       titleSpan: '餐廳',
-      description: '透過我們的年度會員計劃，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
+      description: '透過iFoodPulse，獲得新鮮食材、優質肉類以及經營餐廳所需的一切。',
       button1Text: '開始您的會員資格',
-      button1Link: '/register',
+      button1Link: '/partners/apply',
       button2Text: '瀏覽產品',
       button2Link: '/products',
     },
@@ -67,7 +77,7 @@ function defaultHomepageAreas() {
       title: '準備好改變您的餐廳了嗎？',
       description: '今天就加入我們的會員計劃，開始享受優質食品供應服務。',
       button1Text: '開始免費試用',
-      button1Link: '/register',
+      button1Link: '/partners/apply',
       button2Text: '查看價格',
       button2Link: '/pricing',
     },
@@ -80,6 +90,15 @@ function defaultHomepageAreas() {
 
 function defaultMobileAppAreas() {
   return {
+    displaySettings: {
+      logo: true,
+      banners: true,
+      categories: true,
+      longBanners: true,
+      promotionalBanners: true,
+      squareBanners: true,
+      popupBanner: true,
+    },
     logo: {
       image: '',
       appTitle: 'iFoodPulse',
@@ -113,24 +132,36 @@ function defaultMobileAppAreas() {
         title: '今日特價',
         subtitle: '全場8折優惠',
         color: '#FF6B6B',
+        detailImage: '',
+        detailUrl: '',
       },
       promo2: {
         image: '',
         title: '快速配送',
         subtitle: '1小時內送達',
         color: '#4ECDC4',
+        detailImage: '',
+        detailUrl: '',
       },
       promo3: {
         image: '',
         title: '會員專享',
         subtitle: '額外9折優惠',
         color: '#45B7D1',
+        detailImage: '',
+        detailUrl: '',
       },
     },
     longBanners: {
       long1: {
         image: '',
       },
+    },
+    cartBanner: {
+      image: '',
+    },
+    ordersBanner: {
+      image: '',
     },
     squareBanners: [
       { image: '' },
@@ -144,44 +175,57 @@ function defaultMobileAppAreas() {
         title: '食材訂購',
         icon: 'restaurant-outline',
         color: '#10B981',
+        screenRedirect: 'Categories',
       },
       category2: {
-        title: '餐廳工程',
+        title: '商業維修',
         icon: 'construct-outline',
         color: '#3B82F6',
+        screenRedirect: 'RestaurantMaintenance',
       },
       category3: {
-        title: '餐廳傢具',
+        title: '廚房設備',
         icon: 'bed-outline',
         color: '#8B5CF6',
+        screenRedirect: 'KitchenEquipment',
       },
       category4: {
-        title: '廚房設備',
+        title: '餐碟餐具',
         icon: 'hardware-chip-outline',
         color: '#F59E0B',
+        screenRedirect: 'DishesTableware',
       },
       category5: {
-        title: '宣傳',
+        title: '傢俬訂製',
         icon: 'megaphone-outline',
         color: '#EF4444',
+        screenRedirect: 'RestaurantFurniture',
       },
       category6: {
-        title: '餐碟餐具',
+        title: '廣告宣傳',
         icon: 'restaurant-outline',
         color: '#06B6D4',
+        screenRedirect: 'Promotion',
       },
       category7: {
-        title: '餐飲維修',
+        title: '系統保安',
         icon: 'construct-outline',
         color: '#8B5A2B',
+        screenRedirect: 'RestaurantSystems',
       },
       category8: {
-        title: '餐飲系統',
+        title: '商業工程',
         icon: 'laptop-outline',
         color: '#9C27B0',
+        screenRedirect: 'RestaurantConstruction',
       },
     },
+    paymentMethods: [],
   };
+}
+
+function defaultFooterAreas() {
+  return getDefaultFooterAreas();
 }
 
 
@@ -193,16 +237,34 @@ interface CmsPageDoc {
   updatedAt?: any;
 }
 
+// Pages to hide from the admin "內容管理" list (display-only; does not delete Firestore docs)
+const HIDDEN_SLUGS = new Set<string>([
+  'homepage', // 首頁
+  'restaurant-construction',
+  'restaurant-furniture',
+  'kitchen-equipment',
+  'promotion',
+  'dishes-tableware',
+  'restaurant-maintenance',
+  'restaurant-systems',
+  'pricing', // 成為會員
+  'partners',
+  'faq', // F&Q
+  'about',
+  'contact', // 聯絡我們
+  'privacy', // 隱私政策 Privacy Policy
+  'terms', // 服務條款 Terms of Service
+  'footer', // footer
+  'purchase-sale-agreement', // 買賣協議 Purchase and Sale Agreement
+]);
+
 const DEFAULT_PAGES: CmsPageDoc[] = [
   { title: '首頁', slug: 'homepage', areas: defaultHomepageAreas(), content: '' },
-  { title: '關於我們', slug: 'about', content: '這是關於我們內容。' },
   { title: '聯絡我們', slug: 'contact', content: '這是聯絡我們內容。' },
-  { title: '成為會員', slug: 'pricing', content: '這是成為會員頁面內容。' },
-  { title: '合作夥伴', slug: 'partners', content: '這是合作夥伴頁面內容。' },
-  { title: '餐廳工程', slug: 'restaurant-construction', content: '這是餐廳工程頁面內容。' },
-  { title: '餐廳傢具', slug: 'restaurant-furniture', content: '這是餐廳傢具頁面內容。' },
-  { title: '廚房設備', slug: 'kitchen-equipment', content: '這是廚房設備頁面內容。' },
-  { title: '宣傳', slug: 'promotion', content: '這是宣傳頁面內容。' },
+  { title: PRIVACY_DEFAULT_TITLE, slug: 'privacy', content: PRIVACY_DEFAULT_CONTENT },
+  { title: TERMS_DEFAULT_TITLE, slug: 'terms', content: TERMS_DEFAULT_CONTENT },
+  { title: PURCHASE_SALE_DEFAULT_TITLE, slug: 'purchase-sale-agreement', content: PURCHASE_SALE_DEFAULT_CONTENT },
+  { title: FOOTER_DEFAULT_TITLE, slug: 'footer', areas: defaultFooterAreas(), content: '' },
   { title: '手機APP', slug: 'mobile-app', areas: defaultMobileAppAreas(), content: '' },
 ];
 
@@ -235,20 +297,35 @@ export default function AdminContentListPage() {
           updatedAt: data.updatedAt,
         });
       });
-      // Custom ordering
+
+      // Ensure all default pages (including service pages) exist by backfilling any missing docs
+      const existingSlugs = new Set(docs.map((p) => p.slug));
+      const missingDefaults = DEFAULT_PAGES.filter((p) => !existingSlugs.has(p.slug));
+
+      if (missingDefaults.length > 0) {
+        const writes = missingDefaults.map(async (p) => {
+          await setDoc(
+            doc(pagesRef, p.slug),
+            {
+              ...p,
+              updatedAt: Timestamp.now(),
+            },
+            { merge: true },
+          );
+          docs.push({
+            ...p,
+            updatedAt: Timestamp.now(),
+          });
+        });
+        await Promise.all(writes);
+      }
+
+      // Custom ordering for visible pages
+      const visibleDocs = docs.filter((p) => !HIDDEN_SLUGS.has(p.slug));
       const order = [
-        'homepage',
         'mobile-app',
-        'restaurant-construction',
-        'restaurant-furniture',
-        'kitchen-equipment',
-        'promotion',
-        'pricing',
-        'partners',
-        'about',
-        'contact',
       ];
-      docs.sort((a, b) => {
+      visibleDocs.sort((a, b) => {
         const aIndex = order.indexOf(a.slug);
         const bIndex = order.indexOf(b.slug);
         // If both are in the order array, sort by their position
@@ -261,8 +338,8 @@ export default function AdminContentListPage() {
         // If neither is in the order array, sort alphabetically by title
         return a.title.localeCompare(b.title, 'zh-Hant');
       });
-      setPages(docs);
-      if (docs.length === 0) {
+      setPages(visibleDocs);
+      if (visibleDocs.length === 0) {
         setError('目前沒有任何頁面。請點擊下方按鈕建立預設頁面。');
       }
     } catch (e: any) {
@@ -378,17 +455,15 @@ export default function AdminContentListPage() {
           <h2 className="text-xl font-semibold">內容管理</h2>
           <div className="flex items-center gap-2">
             <button
-              className="px-3 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200"
+              disabled={loading}
               onClick={loadPages}
+              className={`px-4 py-2 text-sm rounded-lg border ${
+                loading
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'
+              }`}
             >
-              重新整理
-            </button>
-            <button
-              disabled={seeding}
-              onClick={seedDefaults}
-              className={`px-4 py-2 text-sm rounded-lg text-white ${seeding ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}
-            >
-              {seeding ? '建立中...' : '建立預設頁面'}
+              {loading ? '重新整理中...' : '重新整理'}
             </button>
           </div>
         </div>

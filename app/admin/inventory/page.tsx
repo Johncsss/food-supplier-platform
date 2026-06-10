@@ -1,15 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
-  Filter, 
   AlertTriangle, 
-  TrendingUp, 
-  TrendingDown,
-  X,
-  History,
-  Edit
+  X
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, addDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
@@ -42,6 +37,8 @@ export default function AdminInventory() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 100;
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -97,14 +94,31 @@ export default function AdminInventory() {
     fetchInventory();
   }, []);
 
-  const filteredInventory = inventory.filter(item => {
+  const filteredInventory = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
+    return inventory.filter(item => {
     const matchesSearch = 
       item.name.toLowerCase().includes(searchLower) ||
       item.id.toLowerCase().includes(searchLower);
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  }, [inventory, searchTerm, statusFilter]);
+
+  // Reset to first page when filter/search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, inventory.length]);
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredInventory.length / ITEMS_PER_PAGE));
+  const pageStart = (currentPage - 1) * ITEMS_PER_PAGE;
+  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, filteredInventory.length);
+  const paginatedInventory = filteredInventory.slice(pageStart, pageEnd);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -263,56 +277,7 @@ export default function AdminInventory() {
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-yellow-100">
-              <AlertTriangle className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">庫存不足項目</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.lowStock}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-red-100">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">缺貨項目</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.outOfStock}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-green-100">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">總項目數</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalItems}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-blue-100">
-              <TrendingDown className="w-6 h-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">平均庫存水平</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.avgStockLevel}%</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Stats Overview removed as requested */}
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
@@ -346,12 +311,7 @@ export default function AdminInventory() {
             </select>
           </div>
 
-          <div className="flex items-end">
-            <button className="w-full btn-primary py-3">
-              <Filter className="w-4 h-4 mr-2" />
-              套用篩選
-            </button>
-          </div>
+          <div className="flex items-end"></div>
         </div>
       </div>
 
@@ -362,8 +322,13 @@ export default function AdminInventory() {
             <h2 className="text-lg font-semibold text-gray-900">
               庫存 ({filteredInventory.length})
             </h2>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
+          <div className="flex items-center space-x-4 text-sm text-gray-600">
               <span>最後更新：{new Date().toLocaleDateString()}</span>
+            <span>
+              顯示第 <span className="font-medium">{filteredInventory.length === 0 ? 0 : pageStart + 1}</span> -
+              <span className="font-medium"> {pageEnd}</span> 筆，共
+              <span className="font-medium"> {filteredInventory.length}</span> 筆
+            </span>
             </div>
           </div>
         </div>
@@ -393,7 +358,7 @@ export default function AdminInventory() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredInventory.map((item) => (
+              {paginatedInventory.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{item.name}</div>
@@ -445,6 +410,30 @@ export default function AdminInventory() {
         </div>
       </div>
 
+      {/* Pagination */}
+      {filteredInventory.length > 0 && (
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-sm text-gray-600">
+            頁次 <span className="font-medium">{currentPage}</span> / <span className="font-medium">{totalPages}</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              上一頁
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              下一頁
+            </button>
+          </div>
+        </div>
+      )}
       {/* Empty State */}
       {filteredInventory.length === 0 && (
         <div className="text-center py-12">
